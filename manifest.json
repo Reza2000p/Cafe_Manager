@@ -1,7 +1,7 @@
 {
   "name": "کافه کلاور",
-  "short_name": "کافه",
-  "description": "سیستم مدیریت سفارشات کافه",
+  "short_name": "کلاور",
+  "description": "سیستم ابری مدیریت کافه",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f4f6fa",
