@@ -297,20 +297,21 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     // ==========================================
-    // 1. SUPABASE CONFIGURATION (آدرس سرور شما)
+    // 1. SUPABASE CONFIGURATION 
     // ==========================================
-    const SUPABASE_URL = 'https://mknpjmdnbgteopvqwzcq.supabase.co/rest/v1/'; // <-- آدرس را اینجا بگذارید
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rbnBqbWRuYmd0ZW9wdnF3emNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTcwODQsImV4cCI6MjEwMDk5MzA4NH0.-Tysg5UZYoXgKM-BCl1FecaolvwKHr_XfAesKVWeUyc'; // <-- کلید را اینجا بگذارید
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const SUPABASE_URL = 'https://mknpjmdnbgteopvqwzcq.supabase.co/rest/v1/'; // <-- آدرس خود را بگذارید
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rbnBqbWRuYmd0ZW9wdnF3emNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTcwODQsImV4cCI6MjEwMDk5MzA4NH0.-Tysg5UZYoXgKM-BCl1FecaolvwKHr_XfAesKVWeUyc'; // <-- کلید خود را بگذارید
+    
+    // تغییر نام متغیر به supa برای جلوگیری از تداخل (رفع ارور شما)
+    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ==========================================
     // STATE & GLOBAL VARS
     // ==========================================
     let currentUser = null;
-    let userProfile = null; // Contains Full Name and Role
+    let userProfile = null; 
     let cart = [];
     
-    // Local cache for speed, synced via Realtime
     let localMenu = [];
     let localCats = [];
     let localOrders = [];
@@ -333,21 +334,20 @@
     // ==========================================
     async function initApp() {
         uiLoading(true);
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await supa.auth.getSession();
         
         if (session) {
             currentUser = session.user;
             await loadInitialData();
             document.getElementById('logoutBtn').style.display = 'inline';
             showPage('dashboard');
-            initRealtime(); // Start listening for live changes
+            initRealtime(); 
         } else {
             showPage('login');
         }
         uiLoading(false);
 
-        // Listen for auth state changes
-        supabase.auth.onAuthStateChange(async (event, session) => {
+        supa.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
                 currentUser = null;
                 userProfile = null;
@@ -363,7 +363,7 @@
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value.trim();
         
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supa.auth.signInWithPassword({ email, password });
         
         if (error) {
             toast('ایمیل یا رمز عبور اشتباه است', 'danger');
@@ -383,24 +383,22 @@
 
     document.getElementById('logoutBtn').addEventListener('click', async (e) => {
         e.preventDefault();
-        await supabase.auth.signOut();
+        await supa.auth.signOut();
     });
 
     // ==========================================
     // 3. FETCH DATA (INITIAL LOAD)
     // ==========================================
     async function loadInitialData() {
-        // Fetch Profile
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
+        const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
         userProfile = prof || { full_name: currentUser.email, role: 'staff' };
         document.getElementById('currentUser').textContent = userProfile.full_name;
 
-        // Fetch everything in parallel
         const [menuRes, catsRes, ordersRes, profilesRes] = await Promise.all([
-            supabase.from('menu_items').select('*'),
-            supabase.from('categories').select('*'),
-            supabase.from('orders').select('*').order('created_at', { ascending: false }),
-            supabase.from('profiles').select('*')
+            supa.from('menu_items').select('*'),
+            supa.from('categories').select('*'),
+            supa.from('orders').select('*').order('created_at', { ascending: false }),
+            supa.from('profiles').select('*')
         ]);
 
         localMenu = menuRes.data || [];
@@ -413,37 +411,28 @@
     // 4. REALTIME LISTENER
     // ==========================================
     function initRealtime() {
-        supabase.channel('public-tables')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
-                // Fetch fresh orders to keep logic simple and flawless
-                refreshOrders();
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, payload => {
-                refreshMenu();
-            })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => {
-                refreshCats();
-            })
+        supa.channel('public-tables')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => { refreshOrders(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, payload => { refreshMenu(); })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => { refreshCats(); })
             .subscribe();
     }
 
     async function refreshOrders() {
-        const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
+        const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false });
         localOrders = data || [];
         if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
-        if(document.getElementById('page-orders').classList.contains('active')) {
-            renderOrders(); renderHistory();
-        }
+        if(document.getElementById('page-orders').classList.contains('active')) { renderOrders(); renderHistory(); }
     }
     
     async function refreshMenu() {
-        const { data } = await supabase.from('menu_items').select('*');
+        const { data } = await supa.from('menu_items').select('*');
         localMenu = data || [];
         if(document.getElementById('page-menu').classList.contains('active')) renderMenu();
     }
 
     async function refreshCats() {
-        const { data } = await supabase.from('categories').select('*');
+        const { data } = await supa.from('categories').select('*');
         localCats = data || [];
         populateCatSelects();
     }
@@ -533,7 +522,7 @@
         `;
         
         const validOrders = targetOrders.filter(o => o.status !== 'معلق');
-        const recent = validOrders.slice(0, 4); // already descending
+        const recent = validOrders.slice(0, 4); 
         document.getElementById('recentOrders').innerHTML = recent.length ? 
             recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small">
                 <span>#${o.order_number} ${o.customer_name} <span class="badge ${o.status==='نقدی'?'bg-success':'bg-info'}">${o.status}</span></span>
@@ -612,7 +601,7 @@
     window.deleteMenu = async function(id) {
         if(!confirm('آیا از حذف آیتم در سرور اطمینان دارید؟')) return;
         uiLoading(true);
-        await supabase.from('menu_items').delete().eq('id', id);
+        await supa.from('menu_items').delete().eq('id', id);
         uiLoading(false);
     }
 
@@ -624,8 +613,8 @@
         if(!name || !price) { toast('مقادیر نامعتبر است', 'danger'); return; }
         
         uiLoading(true);
-        if(id) { await supabase.from('menu_items').update({ name, price, cat }).eq('id', id); } 
-        else { await supabase.from('menu_items').insert([{ name, price, cat }]); }
+        if(id) { await supa.from('menu_items').update({ name, price, cat }).eq('id', id); } 
+        else { await supa.from('menu_items').insert([{ name, price, cat }]); }
         uiLoading(false);
         bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
     });
@@ -641,21 +630,19 @@
         const name = document.getElementById('newCatName').value.trim();
         if(!name) return;
         uiLoading(true);
-        await supabase.from('categories').insert([{name}]);
+        await supa.from('categories').insert([{name}]);
         document.getElementById('newCatName').value = '';
         uiLoading(false);
-        setTimeout(renderCats, 500); // give realtime a moment
     });
     window.deleteCat = async function(id) {
         if(!confirm('حذف دسته؟')) return;
         uiLoading(true);
-        await supabase.from('categories').delete().eq('id', id);
+        await supa.from('categories').delete().eq('id', id);
         uiLoading(false);
-        setTimeout(renderCats, 500);
     }
 
     // ==========================================
-    // CART & ORDERS (DB & Customers)
+    // CART & ORDERS
     // ==========================================
     const searchInput = document.getElementById('searchItem');
     const searchRes = document.getElementById('itemSearchResults');
@@ -716,16 +703,14 @@
         uiLoading(true);
         const total = cart.reduce((s,c) => s + c.price * c.qty, 0);
         
-        // 1. Insert/Update Customer in DB
-        await supabase.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
+        await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
         
-        // 2. Insert Order
-        const { error } = await supabase.from('orders').insert([{
+        const { error } = await supa.from('orders').insert([{
             customer_name: custName,
             items: cart,
             total: total,
             status: 'معلق',
-            created_by: userProfile.full_name
+            created_by: userProfile.full_name || currentUser.email
         }]);
 
         uiLoading(false);
@@ -786,9 +771,8 @@
     window.settleGroup = async function(idsArray, method) {
         if(method === 'لغو' && !confirm('آیا تمام سفارشات این مشتری لغو شود؟')) return;
         uiLoading(true);
-        await supabase.from('orders').update({ status: method }).in('id', idsArray);
+        await supa.from('orders').update({ status: method }).in('id', idsArray);
         uiLoading(false);
-        // Realtime will auto-refresh!
     };
 
     // ==========================================
@@ -830,20 +814,19 @@
     ['histPayFilter','histUserFilter','histDateFilter'].forEach(id => { document.getElementById(id).addEventListener('change', renderHistory); });
 
     // ==========================================
-    // SYSTEM & USERS (Read Only)
+    // SYSTEM & USERS
     // ==========================================
     function renderUsers() {
         document.getElementById('userList').innerHTML = localProfiles.map(u => `
             <div class="d-flex justify-content-between align-items-center border-bottom py-2">
                 <div>
-                    <strong>${u.full_name}</strong> <span class="badge ${u.role==='manager'?'bg-primary':'bg-secondary'} ms-1">${u.role==='manager'?'مدیر':'کارمند'}</span>
+                    <strong>${u.full_name || 'بدون نام'}</strong> <span class="badge ${u.role==='manager'?'bg-primary':'bg-secondary'} ms-1">${u.role==='manager'?'مدیر':'کارمند'}</span>
                     <div class="text-muted small">ایمیل: ${u.email}</div>
                 </div>
             </div>
         `).join('') || '<div class="empty-state">دیتای پرسنل لود نشد</div>';
     }
 
-    // Reports Logic (Unchanged logically, just uses localOrders)
     document.getElementById('applyReportFilter').addEventListener('click', () => {
         const fromD = document.getElementById('reportDateFrom').value;
         const toD = document.getElementById('reportDateTo').value;
@@ -869,7 +852,6 @@
             </div>`;
     });
 
-    // START APP
     document.addEventListener('DOMContentLoaded', initApp);
 </script>
 <script>if('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); } 
