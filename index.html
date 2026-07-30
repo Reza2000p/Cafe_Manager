@@ -294,10 +294,19 @@
     const uiLoading = (state) => { document.getElementById('loadingOverlay').style.display = state ? 'flex' : 'none'; };
     function toast(msg, type='success') {
         const c = document.getElementById('toastContainer'); const div = document.createElement('div');
-        div.className = `alert alert-${type} shadow-lg py-2 px-3 mb-2 rounded-3 text-center`; div.innerHTML = `<span class="fw-bold">${msg}</span>`;
+        div.className = `alert alert-${type} shadow-lg py-2 px-3 mb-2 rounded-3 text-center`; div.innerHTML = `<span class="fw-bold">${escapeHtml(msg)}</span>`;
         c.appendChild(div); setTimeout(() => div.remove(), 2500);
     }
-    function formatPrice(p) { return Number(p).toLocaleString(); }
+    function formatPrice(p) { return Number(p || 0).toLocaleString(); }
+    function escapeHtml(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
     
     // Register Service Worker for PWA
     if('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); }); }
@@ -307,13 +316,21 @@
     // ==========================================
     async function initApp() {
         uiLoading(true);
-        const { data: { session } } = await supa.auth.getSession();
-        if (session) {
-            currentUser = session.user; await loadInitialData();
-            document.getElementById('logoutBtn').style.display = 'inline';
-            showPage('dashboard'); initRealtime(); 
-        } else { showPage('login'); }
-        uiLoading(false);
+        try {
+            const { data: { session }, error } = await supa.auth.getSession();
+            if (error) throw error;
+            if (session) {
+                currentUser = session.user; await loadInitialData();
+                document.getElementById('logoutBtn').style.display = 'inline';
+                showPage('dashboard'); initRealtime(); 
+            } else { showPage('login'); }
+        } catch (err) {
+            console.error('Init app error:', err);
+            toast('خطا در برقراری ارتباط با سرور', 'danger');
+            showPage('login');
+        } finally {
+            uiLoading(false);
+        }
 
         supa.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') { currentUser = null; userProfile = null; document.getElementById('logoutBtn').style.display = 'none'; showPage('login'); }
@@ -322,14 +339,23 @@
 
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault(); uiLoading(true);
-        const email = document.getElementById('loginEmail').value.trim(); const password = document.getElementById('loginPassword').value.trim();
-        const { data, error } = await supa.auth.signInWithPassword({ email, password });
-        if (error) { toast('ایمیل یا رمز عبور اشتباه است', 'danger'); uiLoading(false); } 
-        else {
-            currentUser = data.user; await loadInitialData();
-            document.getElementById('logoutBtn').style.display = 'inline';
-            document.getElementById('loginEmail').value = ''; document.getElementById('loginPassword').value = '';
-            toast('با موفقیت وارد شدید'); showPage('dashboard'); initRealtime(); uiLoading(false);
+        try {
+            const email = document.getElementById('loginEmail').value.trim(); 
+            const password = document.getElementById('loginPassword').value.trim();
+            const { data, error } = await supa.auth.signInWithPassword({ email, password });
+            if (error) { 
+                toast('ایمیل یا رمز عبور اشتباه است', 'danger'); 
+            } else {
+                currentUser = data.user; await loadInitialData();
+                document.getElementById('logoutBtn').style.display = 'inline';
+                document.getElementById('loginEmail').value = ''; document.getElementById('loginPassword').value = '';
+                toast('با موفقیت وارد شدید'); showPage('dashboard'); initRealtime();
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            toast('خطا در ورود به سیستم', 'danger');
+        } finally {
+            uiLoading(false);
         }
     });
     document.getElementById('logoutBtn').addEventListener('click', async (e) => { e.preventDefault(); await supa.auth.signOut(); });
@@ -338,18 +364,28 @@
     // 3. FETCH DATA & REALTIME
     // ==========================================
     async function loadInitialData() {
-        const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
-        userProfile = prof || { full_name: currentUser.email, role: 'staff' };
-        document.getElementById('currentUser').textContent = userProfile.full_name;
+        try {
+            const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
+            userProfile = prof || { full_name: currentUser.email, role: 'staff' };
+            document.getElementById('currentUser').textContent = userProfile.full_name || currentUser.email;
 
-        const [menuRes, catsRes, ordersRes, profilesRes, custRes] = await Promise.all([
-            supa.from('menu_items').select('*'), supa.from('categories').select('*'),
-            supa.from('orders').select('*').order('created_at', { ascending: false }),
-            supa.from('profiles').select('*'), supa.from('customers').select('*').order('created_at', { ascending: false })
-        ]);
-        localMenu = menuRes.data || []; localCats = catsRes.data || []; localOrders = ordersRes.data || []; 
-        localProfiles = profilesRes.data || []; localCustomers = custRes.data || [];
-        populateFilters();
+            const [menuRes, catsRes, ordersRes, profilesRes, custRes] = await Promise.all([
+                supa.from('menu_items').select('*'), 
+                supa.from('categories').select('*'),
+                supa.from('orders').select('*').order('created_at', { ascending: false }),
+                supa.from('profiles').select('*'), 
+                supa.from('customers').select('*').order('created_at', { ascending: false })
+            ]);
+            localMenu = menuRes.data || []; 
+            localCats = catsRes.data || []; 
+            localOrders = ordersRes.data || []; 
+            localProfiles = profilesRes.data || []; 
+            localCustomers = custRes.data || [];
+            populateFilters();
+        } catch (err) {
+            console.error('Load initial data error:', err);
+            toast('خطا در دریافت اطلاعات اولیه', 'danger');
+        }
     }
 
     function initRealtime() {
@@ -362,19 +398,42 @@
     }
 
     async function refreshOrders() {
-        const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false }); localOrders = data || [];
-        if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
-        if(document.getElementById('page-orders').classList.contains('active')) { renderOrders(); renderHistory(); }
-        if(document.getElementById('page-system').classList.contains('active')) renderCustomersList();
+        try {
+            const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false }); 
+            localOrders = data || [];
+            if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
+            if(document.getElementById('page-orders').classList.contains('active')) { renderOrders(); renderHistory(); }
+            if(document.getElementById('page-system').classList.contains('active')) renderCustomersList();
+        } catch(err) { console.error('Refresh orders error:', err); }
     }
-    async function refreshMenu() { const { data } = await supa.from('menu_items').select('*'); localMenu = data || []; if(document.getElementById('page-menu').classList.contains('active')) renderMenu(); }
-    async function refreshCats() { const { data } = await supa.from('categories').select('*'); localCats = data || []; populateCatSelects(); if(document.getElementById('page-menu').classList.contains('active')) renderCats(); }
-    async function refreshCustomers() { const { data } = await supa.from('customers').select('*').order('created_at', { ascending: false }); localCustomers = data || []; if(document.getElementById('page-system').classList.contains('active')) renderCustomersList(); }
+    async function refreshMenu() { 
+        try {
+            const { data } = await supa.from('menu_items').select('*'); 
+            localMenu = data || []; 
+            if(document.getElementById('page-menu').classList.contains('active')) renderMenu(); 
+        } catch(err) { console.error('Refresh menu error:', err); }
+    }
+    async function refreshCats() { 
+        try {
+            const { data } = await supa.from('categories').select('*'); 
+            localCats = data || []; 
+            populateCatSelects(); 
+            if(document.getElementById('page-menu').classList.contains('active')) renderCats(); 
+        } catch(err) { console.error('Refresh cats error:', err); }
+    }
+    async function refreshCustomers() { 
+        try {
+            const { data } = await supa.from('customers').select('*').order('created_at', { ascending: false }); 
+            localCustomers = data || []; 
+            if(document.getElementById('page-system').classList.contains('active')) renderCustomersList(); 
+        } catch(err) { console.error('Refresh customers error:', err); }
+    }
 
     function populateFilters() {
-        const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name))];
-        const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${u}">${u}</option>`).join('');
-        document.getElementById('histUserFilter').innerHTML = opts; document.getElementById('reportUserFilter').innerHTML = opts;
+        const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
+        const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+        document.getElementById('histUserFilter').innerHTML = opts; 
+        document.getElementById('reportUserFilter').innerHTML = opts;
     }
 
     // ==========================================
@@ -389,7 +448,7 @@
             if(page === 'dashboard') renderDashboard();
             if(page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
             if(page === 'orders') { 
-                const act = document.querySelector('#orderTabs .nav-link.active').dataset.tab;
+                const act = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
                 if(act === 'settle') renderOrders(); if(act === 'history') renderHistory();
             }
             if(page === 'system') { renderUsers(); renderCustomersList(); }
@@ -419,12 +478,14 @@
     document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
     function renderDashboard() {
         const timeFilter = document.getElementById('dashTimeFilter').value;
-        const now = new Date(); const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const now = new Date(); 
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         let targetOrders = localOrders.filter(o => o.status !== 'لغو');
 
         if (timeFilter === 'today') targetOrders = targetOrders.filter(o => new Date(o.created_at) >= startOfToday);
         else if (timeFilter === 'week' || timeFilter === 'month') {
-            const limitDate = new Date(startOfToday); limitDate.setDate(limitDate.getDate() - (timeFilter === 'week' ? 7 : 30) + 1);
+            const limitDate = new Date(startOfToday); 
+            limitDate.setDate(limitDate.getDate() - (timeFilter === 'week' ? 7 : 30) + 1);
             targetOrders = targetOrders.filter(o => new Date(o.created_at) >= limitDate);
         }
 
@@ -443,24 +504,25 @@
         // Top Items
         const itemMap = {}; validOrders.forEach(o => { (o.items||[]).forEach(i => { itemMap[i.name] = (itemMap[i.name]||0) + (i.qty||1); }); });
         const topItems = Object.entries(itemMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${i[0]}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+        document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
         
         // Top Customers
-        const custMap = {}; validOrders.forEach(o => { custMap[o.customer_name] = (custMap[o.customer_name]||0) + o.total; });
+        const custMap = {}; validOrders.forEach(o => { if(o.customer_name) custMap[o.customer_name] = (custMap[o.customer_name]||0) + (o.total||0); });
         const topCust = Object.entries(custMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${i[0]}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+        document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 
         // Recent Orders
         const recent = validOrders.slice(0, 5); 
-        document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.order_number} ${o.customer_name}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+        document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.order_number} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
     }
 
     // ==========================================
     // MENU & CATEGORIES
     // ==========================================
     function populateCatSelects() {
-        let opts = localCats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-        document.getElementById('menuFormCat').innerHTML = opts; document.getElementById('menuCatFilter').innerHTML = `<option value="">همه دسته‌ها</option>` + opts;
+        let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+        document.getElementById('menuFormCat').innerHTML = opts; 
+        document.getElementById('menuCatFilter').innerHTML = `<option value="">همه دسته‌ها</option>` + opts;
     }
 
     function renderMenu() {
@@ -471,7 +533,7 @@
         const filtered = localMenu.filter(it => (it.name.toLowerCase().includes(q)) && (c ? it.cat === c : true) && (it.price >= min && it.price <= max));
         document.getElementById('menuList').innerHTML = filtered.length ? filtered.map(it => `
             <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-                <div><strong class="fs-6">${it.name}</strong><span class="badge bg-light text-dark ms-2 border">${it.cat}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
+                <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
                 <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
             </div>
         `).join('') : '<div class="empty-state">آیتمی یافت نشد</div>';
@@ -486,18 +548,76 @@
         document.getElementById('menuFormId').value = id; document.getElementById('menuFormName').value = item.name; document.getElementById('menuFormPrice').value = item.price; document.getElementById('menuFormCat').value = item.cat || '';
         new bootstrap.Modal(document.getElementById('menuModal')).show();
     }
-    window.deleteMenu = async function(id) { if(!confirm('حذف شود؟')) return; uiLoading(true); await supa.from('menu_items').delete().eq('id', id); uiLoading(false); }
-    document.getElementById('menuFormSave').addEventListener('click', async () => {
-        const id = document.getElementById('menuFormId').value; const name = document.getElementById('menuFormName').value.trim(); const price = parseInt(document.getElementById('menuFormPrice').value); const cat = document.getElementById('menuFormCat').value;
-        if(!name || !price) { toast('نامعتبر', 'danger'); return; }
+    window.deleteMenu = async function(id) { 
+        if(!confirm('حذف شود؟')) return; 
         uiLoading(true);
-        if(id) await supa.from('menu_items').update({ name, price, cat }).eq('id', id); else await supa.from('menu_items').insert([{ name, price, cat }]);
-        uiLoading(false); bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
+        try {
+            const { error } = await supa.from('menu_items').delete().eq('id', id);
+            if (error) throw error;
+            toast('آیتم با موفقیت حذف شد');
+        } catch (err) {
+            console.error('Delete menu error:', err);
+            toast('خطا در حذف آیتم', 'danger');
+        } finally {
+            uiLoading(false);
+        }
+    }
+    document.getElementById('menuFormSave').addEventListener('click', async () => {
+        const id = document.getElementById('menuFormId').value; 
+        const name = document.getElementById('menuFormName').value.trim(); 
+        const price = parseInt(document.getElementById('menuFormPrice').value); 
+        const cat = document.getElementById('menuFormCat').value;
+        if(!name || isNaN(price) || price < 0) { toast('نام یا قیمت نامعتبر است', 'danger'); return; }
+        uiLoading(true);
+        try {
+            let error;
+            if(id) {
+                ({ error } = await supa.from('menu_items').update({ name, price, cat }).eq('id', id));
+            } else {
+                ({ error } = await supa.from('menu_items').insert([{ name, price, cat }]));
+            }
+            if (error) throw error;
+            toast('اطلاعات ذخیره شد');
+            bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
+        } catch (err) {
+            console.error('Save menu error:', err);
+            toast('خطا در ذخیره‌سازی آیتم', 'danger');
+        } finally {
+            uiLoading(false);
+        }
     });
 
-    function renderCats() { document.getElementById('catManageList').innerHTML = localCats.map(c => `<li class="list-group-item d-flex justify-content-between align-items-center p-2">${c.name} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>`).join(''); }
-    document.getElementById('addCatBtn').addEventListener('click', async () => { const name = document.getElementById('newCatName').value.trim(); if(!name) return; uiLoading(true); await supa.from('categories').insert([{name}]); document.getElementById('newCatName').value = ''; uiLoading(false); });
-    window.deleteCat = async function(id) { if(!confirm('حذف دسته؟')) return; uiLoading(true); await supa.from('categories').delete().eq('id', id); uiLoading(false); }
+    function renderCats() { document.getElementById('catManageList').innerHTML = localCats.map(c => `<li class="list-group-item d-flex justify-content-between align-items-center p-2">${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>`).join(''); }
+    document.getElementById('addCatBtn').addEventListener('click', async () => { 
+        const name = document.getElementById('newCatName').value.trim(); 
+        if(!name) { toast('نام دسته الزامی است', 'danger'); return; } 
+        uiLoading(true);
+        try {
+            const { error } = await supa.from('categories').insert([{name}]);
+            if (error) throw error;
+            document.getElementById('newCatName').value = '';
+            toast('دسته‌بندی افزوده شد');
+        } catch (err) {
+            console.error('Add cat error:', err);
+            toast('خطا در ثبت دسته', 'danger');
+        } finally {
+            uiLoading(false);
+        }
+    });
+    window.deleteCat = async function(id) { 
+        if(!confirm('حذف دسته؟')) return; 
+        uiLoading(true);
+        try {
+            const { error } = await supa.from('categories').delete().eq('id', id);
+            if (error) throw error;
+            toast('دسته با موفقیت حذف شد');
+        } catch (err) {
+            console.error('Delete cat error:', err);
+            toast('خطا در حذف دسته‌بندی', 'danger');
+        } finally {
+            uiLoading(false);
+        }
+    }
 
     // ==========================================
     // CART & ORDERS
@@ -506,7 +626,7 @@
     searchInput.addEventListener('input', (e) => {
         const q = e.target.value.trim().toLowerCase(); if(!q) { searchRes.style.display = 'none'; return; }
         const items = localMenu.filter(i => i.name.toLowerCase().includes(q));
-        searchRes.innerHTML = items.length ? items.map(i => `<div class="p-2 border-bottom d-flex justify-content-between" style="cursor:pointer;" onclick="addToCart(${i.id})"><span>${i.name}</span><span class="text-primary fw-bold">${formatPrice(i.price)}</span></div>`).join('') : '<div class="p-2 text-muted small">یافت نشد</div>';
+        searchRes.innerHTML = items.length ? items.map(i => `<div class="p-2 border-bottom d-flex justify-content-between" style="cursor:pointer;" onclick="addToCart(${i.id})"><span>${escapeHtml(i.name)}</span><span class="text-primary fw-bold">${formatPrice(i.price)}</span></div>`).join('') : '<div class="p-2 text-muted small">یافت نشد</div>';
         searchRes.style.display = 'block';
     });
     document.addEventListener('click', (e) => { if(!searchRes.contains(e.target) && e.target !== searchInput) searchRes.style.display = 'none'; });
@@ -522,7 +642,7 @@
         if(!cart.length) cdiv.innerHTML = '<div class="empty-state">سبد خرید خالی است</div>';
         else cdiv.innerHTML = cart.map((c,i) => {
             total += c.price * c.qty;
-            return `<div class="d-flex align-items-center justify-content-between border-bottom py-2"><div style="flex:1;"><strong>${c.name}</strong></div><div class="d-flex align-items-center gap-2 me-3"><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, -1)">-</button><span class="fw-bold" style="min-width:20px;text-align:center">${c.qty}</span><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, 1)">+</button></div><div class="text-primary fw-bold me-2" style="min-width:80px;text-align:left">${formatPrice(c.price * c.qty)}</div><button class="btn btn-sm text-danger" onclick="cart.splice(${i},1);renderCart()"><i class="fas fa-trash"></i></button></div>`;
+            return `<div class="d-flex align-items-center justify-content-between border-bottom py-2"><div style="flex:1;"><strong>${escapeHtml(c.name)}</strong></div><div class="d-flex align-items-center gap-2 me-3"><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, -1)">-</button><span class="fw-bold" style="min-width:20px;text-align:center">${c.qty}</span><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, 1)">+</button></div><div class="text-primary fw-bold me-2" style="min-width:80px;text-align:left">${formatPrice(c.price * c.qty)}</div><button class="btn btn-sm text-danger" onclick="cart.splice(${i},1);renderCart()"><i class="fas fa-trash"></i></button></div>`;
         }).join('');
         document.getElementById('cartTotal').textContent = formatPrice(total); document.getElementById('cartCount').textContent = cart.reduce((s,c)=>s+c.qty, 0);
     }
@@ -533,12 +653,28 @@
         const custName = document.getElementById('customerName').value.trim();
         if(!custName) { toast('نام مشتری الزامی است', 'danger'); return; }
         uiLoading(true);
-        const total = cart.reduce((s,c) => s + c.price * c.qty, 0);
-        await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
-        const { error } = await supa.from('orders').insert([{ customer_name: custName, items: cart, total: total, status: 'معلق', created_by: userProfile.full_name || currentUser.email }]);
-        uiLoading(false);
-        if(error) { toast('خطا در ثبت', 'danger'); return; }
-        cart = []; document.getElementById('customerName').value = ''; renderCart(); toast('ثبت شد'); document.querySelector('[data-tab="settle"]').click();
+        try {
+            const total = cart.reduce((s,c) => s + c.price * c.qty, 0);
+            await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
+            const { error } = await supa.from('orders').insert([{ 
+                customer_name: custName, 
+                items: cart, 
+                total: total, 
+                status: 'معلق', 
+                created_by: (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email 
+            }]);
+            if(error) throw error;
+            cart = []; 
+            document.getElementById('customerName').value = ''; 
+            renderCart(); 
+            toast('ثبت شد'); 
+            document.querySelector('[data-tab="settle"]').click();
+        } catch (err) {
+            console.error('Submit order error:', err);
+            toast('خطا در ثبت سفارش', 'danger');
+        } finally {
+            uiLoading(false);
+        }
     });
 
     // ==========================================
@@ -561,14 +697,35 @@
         if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">سفارش بازی نیست</div>'; return; }
 
         listDiv.innerHTML = keys.map(k => {
-            const g = groups[k]; const itemsStr = Object.entries(g.itemsMap).map(e => `${e[0]}(${e[1]})`).join('، '); const orderNums = g.orders.map(n => `#${n}`).join(' و ');
-            return `<div class="border-bottom py-3 d-flex flex-wrap align-items-center justify-content-between"><div><strong>${k}</strong> ${g.ids.length > 1 ? `<span class="badge bg-warning text-dark ms-2 rounded-pill">${g.ids.length} فاکتور مجزا</span>` : ''} <span class="text-primary ms-2 fw-bold fs-6">${formatPrice(g.total)} تومان</span><div class="small mt-1 text-muted">${itemsStr}</div><div class="order-meta"><i class="fas fa-hashtag"></i> سفارشات: ${orderNums} | <i class="fas fa-user-edit"></i> ${g.createdBy}</div></div><div class="mt-2 mt-sm-0 d-flex gap-1"><button class="btn btn-sm btn-success-custom" onclick='settleGroup(${JSON.stringify(g.ids)}, "نقدی")'>نقدی</button><button class="btn btn-sm btn-primary-custom" onclick='settleGroup(${JSON.stringify(g.ids)}, "کارت")'>کارت</button><button class="btn btn-sm btn-danger" onclick='settleGroup(${JSON.stringify(g.ids)}, "لغو")'>لغو</button></div></div>`;
+            const g = groups[k]; 
+            const itemsStr = Object.entries(g.itemsMap).map(e => `${escapeHtml(e[0])}(${e[1]})`).join('، '); 
+            const orderNums = g.orders.map(n => `#${n}`).join(' و ');
+            const idsJson = escapeHtml(JSON.stringify(g.ids));
+            return `<div class="border-bottom py-3 d-flex flex-wrap align-items-center justify-content-between"><div><strong>${escapeHtml(k)}</strong> ${g.ids.length > 1 ? `<span class="badge bg-warning text-dark ms-2 rounded-pill">${g.ids.length} فاکتور مجزا</span>` : ''} <span class="text-primary ms-2 fw-bold fs-6">${formatPrice(g.total)} تومان</span><div class="small mt-1 text-muted">${itemsStr}</div><div class="order-meta"><i class="fas fa-hashtag"></i> سفارشات: ${orderNums} | <i class="fas fa-user-edit"></i> ${escapeHtml(g.createdBy)}</div></div><div class="mt-2 mt-sm-0 d-flex gap-1"><button class="btn btn-sm btn-success-custom" onclick='settleGroup(${idsJson}, "نقدی")'>نقدی</button><button class="btn btn-sm btn-primary-custom" onclick='settleGroup(${idsJson}, "کارت")'>کارت</button><button class="btn btn-sm btn-danger" onclick='settleGroup(${idsJson}, "لغو")'>لغو</button></div></div>`;
         }).join('');
     }
-    window.settleGroup = async function(idsArray, method) { if(method === 'لغو' && !confirm('لغو شود؟')) return; uiLoading(true); await supa.from('orders').update({ status: method }).in('id', idsArray); uiLoading(false); };
+    window.settleGroup = async function(idsArray, method) { 
+        if(method === 'لغو' && !confirm('لغو شود؟')) return; 
+        uiLoading(true);
+        try {
+            const { error } = await supa.from('orders').update({ status: method }).in('id', idsArray);
+            if (error) throw error;
+            toast('تسویه حساب انجام شد');
+        } catch (err) {
+            console.error('Settle group error:', err);
+            toast('خطا در تسویه حساب', 'danger');
+        } finally {
+            uiLoading(false);
+        }
+    };
 
     function renderHistory() {
-        const payF = document.getElementById('histPayFilter').value; const userF = document.getElementById('histUserFilter').value; const dateF = document.getElementById('histDateFilter').value; const startOfToday = new Date(new Date().setHours(0,0,0,0));
+        const payF = document.getElementById('histPayFilter').value; 
+        const userF = document.getElementById('histUserFilter').value; 
+        const dateF = document.getElementById('histDateFilter').value; 
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
         let filtered = localOrders.filter(o => o.status !== 'معلق');
         if(payF) filtered = filtered.filter(o => o.status === payF);
         if(userF) filtered = filtered.filter(o => o.created_by === userF);
@@ -576,7 +733,7 @@
 
         document.getElementById('historyList').innerHTML = filtered.length ? filtered.map(o => {
             const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', {hour: '2-digit', minute:'2-digit'});
-            return `<div class="border-bottom py-2"><div class="d-flex justify-content-between mb-1"><span class="fw-bold">#${o.order_number} ${o.customer_name}</span><span class="text-primary fw-bold">${formatPrice(o.total)}</span></div><div class="d-flex justify-content-between align-items-center"><div class="order-meta m-0"><i class="fas fa-clock"></i> ${timeStr} | <i class="fas fa-user"></i> ${o.created_by}</div><span class="badge ${o.status==='نقدی'?'bg-success':o.status==='کارت'?'bg-info':'bg-danger'}">${o.status}</span></div></div>`;
+            return `<div class="border-bottom py-2"><div class="d-flex justify-content-between mb-1"><span class="fw-bold">#${o.order_number} ${escapeHtml(o.customer_name)}</span><span class="text-primary fw-bold">${formatPrice(o.total)}</span></div><div class="d-flex justify-content-between align-items-center"><div class="order-meta m-0"><i class="fas fa-clock"></i> ${timeStr} | <i class="fas fa-user"></i> ${escapeHtml(o.created_by)}</div><span class="badge ${o.status==='نقدی'?'bg-success':o.status==='کارت'?'bg-info':'bg-danger'}">${escapeHtml(o.status)}</span></div></div>`;
         }).join('') : '<div class="empty-state">موردی یافت نشد</div>';
     }
     ['histPayFilter','histUserFilter','histDateFilter'].forEach(id => { document.getElementById(id).addEventListener('change', renderHistory); });
@@ -586,24 +743,41 @@
     // ==========================================
     window.setRepDate = function(mode) {
         const dFrom = document.getElementById('reportDateFrom'); const dTo = document.getElementById('reportDateTo');
-        const now = new Date(); const todayStr = now.toISOString().split('T')[0];
+        const now = new Date(); 
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+
         if(mode === 'today') { dFrom.value = todayStr; dTo.value = todayStr; }
         else if(mode === 'all') { dFrom.value = ''; dTo.value = ''; }
         else {
             const limit = new Date(now);
-            if(mode==='3days') limit.setDate(limit.getDate()-2);
-            if(mode==='week') limit.setDate(limit.getDate()-6);
-            if(mode==='month') limit.setDate(limit.getDate()-29);
-            dFrom.value = limit.toISOString().split('T')[0]; dTo.value = todayStr;
+            if(mode==='3days') limit.setDate(limit.getDate() - 2);
+            if(mode==='week') limit.setDate(limit.getDate() - 6);
+            if(mode==='month') limit.setDate(limit.getDate() - 29);
+            const lYear = limit.getFullYear();
+            const lMonth = String(limit.getMonth() + 1).padStart(2, '0');
+            const lDay = String(limit.getDate()).padStart(2, '0');
+            dFrom.value = `${lYear}-${lMonth}-${lDay}`; 
+            dTo.value = todayStr;
         }
         document.getElementById('applyReportFilter').click();
     };
 
     document.getElementById('applyReportFilter').addEventListener('click', () => {
-        const fromD = document.getElementById('reportDateFrom').value; const toD = document.getElementById('reportDateTo').value; const userF = document.getElementById('reportUserFilter').value;
+        const fromD = document.getElementById('reportDateFrom').value; 
+        const toD = document.getElementById('reportDateTo').value; 
+        const userF = document.getElementById('reportUserFilter').value;
         let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
-        if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD));
-        if (toD) { const toLimit = new Date(toD); toLimit.setDate(toLimit.getDate() + 1); orders = orders.filter(o => new Date(o.created_at) < toLimit); }
+        if (fromD) {
+            const fromDate = new Date(fromD + 'T00:00:00');
+            orders = orders.filter(o => new Date(o.created_at) >= fromDate);
+        }
+        if (toD) {
+            const toDate = new Date(toD + 'T23:59:59.999');
+            orders = orders.filter(o => new Date(o.created_at) <= toDate);
+        }
         if (userF) orders = orders.filter(o => o.created_by === userF);
         
         const totalRev = orders.reduce((s,o)=>s+o.total,0);
@@ -632,7 +806,7 @@
                 
                 <h6 class="fw-bold mt-2 text-dark"><i class="fas fa-list"></i> ریز اقلام فروخته شده (از بیشترین به کمترین):</h6>
                 <ul class="list-group list-group-flush small">
-                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${i[0]}</span> <span><span class="fw-bold text-dark">${i[1].qty}</span> عدد (<span class="text-muted">${formatPrice(i[1].revenue)} ت</span>)</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">اقلامی فروخته نشده</li>'}
+                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(i[0])}</span> <span><span class="fw-bold text-dark">${i[1].qty}</span> عدد (<span class="text-muted">${formatPrice(i[1].revenue)} ت</span>)</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">اقلامی فروخته نشده</li>'}
                 </ul>
             </div>`;
             
@@ -657,7 +831,7 @@
     // ==========================================
     // SYSTEM & CUSTOMERS
     // ==========================================
-    function renderUsers() { document.getElementById('userList').innerHTML = localProfiles.map(u => `<div class="d-flex justify-content-between align-items-center border-bottom py-2"><div><strong>${u.full_name || 'بدون نام'}</strong> <span class="badge ${u.role==='manager'?'bg-primary':'bg-secondary'} ms-1">${u.role==='manager'?'مدیر':'کارمند'}</span><div class="text-muted small">ایمیل: ${u.email}</div></div></div>`).join('') || '<div class="empty-state">دیتای پرسنل لود نشد</div>'; }
+    function renderUsers() { document.getElementById('userList').innerHTML = localProfiles.map(u => `<div class="d-flex justify-content-between align-items-center border-bottom py-2"><div><strong>${escapeHtml(u.full_name || 'بدون نام')}</strong> <span class="badge ${u.role==='manager'?'bg-primary':'bg-secondary'} ms-1">${u.role==='manager'?'مدیر':'کارمند'}</span><div class="text-muted small">ایمیل: ${escapeHtml(u.email)}</div></div></div>`).join('') || '<div class="empty-state">دیتای پرسنل لود نشد</div>'; }
 
     document.getElementById('custSearch').addEventListener('input', renderCustomersList);
     function renderCustomersList() {
@@ -668,7 +842,7 @@
         localOrders.forEach(o => {
             if(o.status !== 'لغو' && o.status !== 'معلق') {
                 if(!stats[o.customer_name]) stats[o.customer_name] = { count: 0, spent: 0 };
-                stats[o.customer_name].count++; stats[o.customer_name].spent += o.total;
+                stats[o.customer_name].count++; stats[o.customer_name].spent += (o.total || 0);
             }
         });
 
@@ -678,8 +852,8 @@
         document.getElementById('customerListTable').innerHTML = filtered.length ? filtered.map(c => {
             const s = stats[c.full_name] || { count: 0, spent: 0 };
             return `<div class="border-bottom py-3 d-flex justify-content-between align-items-center">
-                <div><strong class="fs-6 text-dark">${c.full_name}</strong><div class="small mt-1 text-muted"><i class="fas fa-shopping-bag"></i> ${s.count} سفارش صادر شده<br><i class="fas fa-coins"></i> ${formatPrice(s.spent)} تومان خرید</div></div>
-                <div><button class="btn btn-sm btn-outline-primary" onclick="editCustomer('${c.full_name}')"><i class="fas fa-edit"></i> ویرایش نام</button></div>
+                <div><strong class="fs-6 text-dark">${escapeHtml(c.full_name)}</strong><div class="small mt-1 text-muted"><i class="fas fa-shopping-bag"></i> ${s.count} سفارش صادر شده<br><i class="fas fa-coins"></i> ${formatPrice(s.spent)} تومان خرید</div></div>
+                <div><button class="btn btn-sm btn-outline-primary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش نام</button></div>
             </div>`;
         }).join('') : '<div class="empty-state">مشتری یافت نشد</div>';
     }
@@ -687,15 +861,26 @@
     window.editCustomer = async function(oldName) {
         const newName = prompt('نام جدید مشتری را وارد کنید:', oldName);
         if(!newName || newName.trim() === '' || newName === oldName) return;
+        const cleanNewName = newName.trim();
         uiLoading(true);
-        // Ensure new name doesn't exist
-        const check = localCustomers.find(c => c.full_name === newName);
-        if(check) { toast('این نام از قبل وجود دارد', 'danger'); uiLoading(false); return; }
-        
-        // Update both tables
-        await supa.from('customers').update({ full_name: newName }).eq('full_name', oldName);
-        await supa.from('orders').update({ customer_name: newName }).eq('customer_name', oldName);
-        uiLoading(false); toast('مشخصات مشتری با موفقیت ویرایش شد');
+        try {
+            // Ensure new name doesn't exist
+            const check = localCustomers.find(c => c.full_name === cleanNewName);
+            if(check) { toast('این نام از قبل وجود دارد', 'danger'); return; }
+            
+            // Update both tables
+            const { error: err1 } = await supa.from('customers').update({ full_name: cleanNewName }).eq('full_name', oldName);
+            if (err1) throw err1;
+            const { error: err2 } = await supa.from('orders').update({ customer_name: cleanNewName }).eq('customer_name', oldName);
+            if (err2) throw err2;
+            
+            toast('مشخصات مشتری با موفقیت ویرایش شد');
+        } catch (err) {
+            console.error('Edit customer error:', err);
+            toast('خطا در ویرایش اطلاعات مشتری', 'danger');
+        } finally {
+            uiLoading(false);
+        }
     };
 
     document.addEventListener('DOMContentLoaded', initApp);
