@@ -1,0 +1,18 @@
+{
+  "name": "کافه کلاور",
+  "short_name": "کافه",
+  "description": "سیستم مدیریت سفارشات کافه",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6fa",
+  "theme_color": "#2d2a7e",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3043/3043888.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
