@@ -33,25 +33,24 @@ function saveDeviceSessionsToStorage() {
 
 // Convert Supabase active_timer_sessions rows array to deviceSessions dictionary
 function parseSupabaseActiveSessions(rows) {
+    if (!Array.isArray(rows)) return;
     const dict = {};
-    if (Array.isArray(rows)) {
-        rows.forEach(r => {
-            const devId = r.device_id;
-            if (!dict[devId]) dict[devId] = [];
-            dict[devId].push({
-                id: r.id,
-                device_id: r.device_id,
-                device_name: r.device_name,
-                customer_name: r.customer_name,
-                hourly_rate: Number(r.hourly_rate || 0),
-                start_time: r.start_time,
-                current_segment_start: r.current_segment_start || r.start_time,
-                accumulated_cost: Number(r.accumulated_cost || 0),
-                accumulated_seconds: Number(r.accumulated_seconds || 0),
-                end_time: null
-            });
+    rows.forEach(r => {
+        const devId = r.device_id;
+        if (!dict[devId]) dict[devId] = [];
+        dict[devId].push({
+            id: r.id,
+            device_id: r.device_id,
+            device_name: r.device_name,
+            customer_name: r.customer_name,
+            hourly_rate: Number(r.hourly_rate || 0),
+            start_time: r.start_time,
+            current_segment_start: r.current_segment_start || r.start_time,
+            accumulated_cost: Number(r.accumulated_cost || 0),
+            accumulated_seconds: Number(r.accumulated_seconds || 0),
+            end_time: null
         });
-    }
+    });
     deviceSessions = dict;
     saveDeviceSessionsToStorage();
 }

@@ -116,7 +116,11 @@ async function startDevicePlayer(deviceId, customerName) {
 
     if (supa) {
         try {
-            await supa.from('active_timer_sessions').insert([sessionObj]);
+            const { error: insErr } = await supa.from('active_timer_sessions').insert([sessionObj]);
+            if (insErr) {
+                console.error('Error inserting active_timer_session:', insErr);
+                toast('خطا در ثبت تایمر در دیتابیس (بررسی RLS): ' + insErr.message, 'warning');
+            }
         } catch(e) { console.error('Error inserting active_timer_session:', e); }
     }
 

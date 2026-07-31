@@ -212,7 +212,7 @@ async function silentRefreshData() {
             localProfiles = profilesRes.data;
             populateFilters();
         }
-        if (activeSessionsRes && activeSessionsRes.data) parseSupabaseActiveSessions(activeSessionsRes.data);
+        if (activeSessionsRes && activeSessionsRes.data && !activeSessionsRes.error) parseSupabaseActiveSessions(activeSessionsRes.data);
 
         // SILENTLY RE-RENDER ACTIVE VIEW
         const activePage = document.querySelector('.page.active')?.id;
