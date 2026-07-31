@@ -24,7 +24,7 @@
         .page.active { display: block; }
         @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
 
-        .card-modern { background: #ffffff; border-radius: 20px; padding: 18px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0,0,0,0.02); margin-bottom: 20px; }
+        .card-modern { background: #ffffff; border-radius: 20px; padding: 18px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0,0,0,0.02); margin-bottom: 20px; position: relative; }
         .stat-card { text-align: center; padding: 15px 5px; border-radius: 16px; background: #fff; border: 1px solid #f0f0f0; height: 100%;}
         .stat-card .icon-box { display: inline-flex; align-items: center; justify-content: center; width: 45px; height: 45px; border-radius: 12px; margin-bottom: 8px; font-size: 1.2rem;}
         .stat-card h5 { font-size: 1.2rem; font-weight: 700; color: #2d2a7e; margin-bottom: 2px; }
@@ -489,9 +489,10 @@
             targetOrders = targetOrders.filter(o => new Date(o.created_at) >= limitDate);
         }
 
-        const totalSales = targetOrders.reduce((s,o) => s + (o.total||0), 0);
+        const settledOrders = targetOrders.filter(o => o.status !== 'معلق');
+        const totalSales = settledOrders.reduce((s,o) => s + (o.total||0), 0);
         let totalItems = 0; targetOrders.forEach(o => { if(o.items) totalItems += o.items.reduce((s,i)=>s+(i.qty||0),0); });
-        const avgValue = targetOrders.length ? Math.round(totalSales / targetOrders.length) : 0;
+        const avgValue = settledOrders.length ? Math.round(totalSales / settledOrders.length) : 0;
 
         document.getElementById('dashboardStats').innerHTML = `
             <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-primary text-white bg-opacity-75"><i class="fas fa-shopping-bag"></i></div><h5>${targetOrders.length}</h5><small>سفارشات</small></div></div>
