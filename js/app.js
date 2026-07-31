@@ -228,12 +228,12 @@ function initRealtime() {
 
     channel.subscribe();
 
-    // 3. Smart Polling (Every 10 Seconds ONLY IF TAB IS VISIBLE -> Saves 90%+ DB & Bandwidth Quota)
+    // 3. Fallback Polling (Every 3 Seconds Continuously) for 100% Guaranteed Cross-Device Sync
     setInterval(async () => {
-        if (!document.hidden && currentUser) {
+        if (currentUser) {
             await silentRefreshData();
         }
-    }, 10000);
+    }, 3000);
 }
 
 async function refreshOrders() {
