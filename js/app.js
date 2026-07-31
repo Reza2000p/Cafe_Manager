@@ -142,6 +142,7 @@ async function loadInitialData() {
         localLogs = logsRes.data || [];
 
         populateFilters();
+        populateCatSelects();
     } catch (err) {
         console.error('Load initial data error:', err);
         toast('خطا در دریافت اطلاعات اولیه', 'danger');
@@ -163,7 +164,11 @@ async function refreshOrders() {
         const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false });
         localOrders = data || [];
         if (document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
-        if (document.getElementById('page-orders').classList.contains('active')) { renderOrdersTab(); renderHistory(); }
+        if (document.getElementById('page-orders').classList.contains('active')) { 
+            renderOrdersTab(); 
+            renderSettlement();
+            renderHistory(); 
+        }
         if (document.getElementById('page-system').classList.contains('active')) renderCustomersList();
     } catch (err) { console.error('Refresh orders error:', err); }
 }
@@ -201,6 +206,28 @@ function populateFilters() {
         const el = document.getElementById(id);
         if (el) el.innerHTML = opts;
     });
+}
+
+// Populate Category selects based on tab type (Static vs Timer)
+function populateCatSelects(forTimer = false) {
+    const staticCats = localCats.filter(c => c.is_timer !== true && c.type !== 'timer');
+    const timerCats = localCats.filter(c => c.is_timer === true || c.type === 'timer');
+
+    const menuCatSelect = document.getElementById('menuFormCat');
+    if (menuCatSelect) {
+        const targetCats = forTimer ? timerCats : staticCats;
+        menuCatSelect.innerHTML = targetCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    }
+
+    const staticFilter = document.getElementById('menuCatFilter');
+    if (staticFilter) {
+        staticFilter.innerHTML = `<option value="">همه دسته‌ها</option>` + staticCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    }
+
+    const timerFilter = document.getElementById('timerDeviceCatFilter');
+    if (timerFilter) {
+        timerFilter.innerHTML = `<option value="">همه دسته‌بندی‌های دستگاه‌ها</option>` + timerCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    }
 }
 
 // 3. NAVIGATION & TABS
@@ -252,6 +279,14 @@ setupTabs('systemTabs', 'systemTabContent', null);
 setupTabs('historySubTabs', 'historySubTabContent', (tab) => { renderHistory(); });
 setupTabs('catSubTabs', 'catSubTabContent', (tab) => { renderCats(); });
 setupTabs('reportSubTabs', 'reportSubTabContent', (tab) => { renderReports(); });
+
+// Search & Filter event listeners for Timer Devices Tab
+document.addEventListener('DOMContentLoaded', () => {
+    const tSearch = document.getElementById('timerDeviceSearch');
+    const tCat = document.getElementById('timerDeviceCatFilter');
+    if (tSearch) tSearch.addEventListener('input', updateLiveDeviceCardsUI);
+    if (tCat) tCat.addEventListener('change', updateLiveDeviceCardsUI);
+});
 
 // 4. DASHBOARD
 document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
@@ -328,13 +363,7 @@ function renderDashboard() {
     document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 }
 
-// 5. MENU & CATEGORIES MANAGEMENT (WITH DYNAMIC CATEGORY TYPE)
-function populateCatSelects() {
-    let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
-    document.getElementById('menuFormCat').innerHTML = opts;
-    document.getElementById('menuCatFilter').innerHTML = `<option value="">همه دسته‌ها</option>` + opts;
-}
-
+// 5. MENU & CATEGORIES MANAGEMENT
 function renderMenu() {
     const q = document.getElementById('menuSearch').value.trim().toLowerCase();
     const c = document.getElementById('menuCatFilter').value;
@@ -363,6 +392,7 @@ document.getElementById('menuSearch').addEventListener('input', renderMenu);
 document.getElementById('menuCatFilter').addEventListener('change', renderMenu);
 
 document.getElementById('addStaticItemBtn').addEventListener('click', () => {
+    populateCatSelects(false); // Static categories only
     document.getElementById('menuFormId').value = '';
     document.getElementById('menuFormIsTimer').value = 'false';
     document.getElementById('menuModalTitle').textContent = 'افزودن آیتم ثابت (بوفه)';
@@ -373,6 +403,7 @@ document.getElementById('addStaticItemBtn').addEventListener('click', () => {
 });
 
 document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
+    populateCatSelects(true); // Timer categories only
     document.getElementById('menuFormId').value = '';
     document.getElementById('menuFormIsTimer').value = 'true';
     document.getElementById('menuModalTitle').textContent = 'افزودن دستگاه تایمری جدید';
@@ -385,6 +416,7 @@ document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
 window.editMenu = function(id) {
     const item = localMenu.find(i => i.id === id);
     if (!item) return;
+    populateCatSelects(item.is_timer);
     document.getElementById('menuFormId').value = id;
     document.getElementById('menuFormIsTimer').value = item.is_timer ? 'true' : 'false';
     document.getElementById('menuModalTitle').textContent = item.is_timer ? 'ویرایش دستگاه تایمری' : 'ویرایش آیتم ثابت';
@@ -476,7 +508,6 @@ function renderCats() {
     `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی تایمری وجود ندارد</li>';
 }
 
-// SAFE & REALTIME CATEGORY ADDITION
 document.getElementById('addCatStaticBtn').addEventListener('click', async () => {
     const name = document.getElementById('newCatStaticName').value.trim();
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
@@ -485,7 +516,6 @@ document.getElementById('addCatStaticBtn').addEventListener('click', async () =>
         let payload = { name, is_timer: false, type: 'static' };
         let { error } = await supa.from('categories').insert([payload]);
         if (error) {
-            // Fallback if type column is missing in DB schema
             ({ error } = await supa.from('categories').insert([{ name }]));
         }
         if (error) throw error;
@@ -507,7 +537,6 @@ document.getElementById('addCatTimerBtn').addEventListener('click', async () => 
         let payload = { name, is_timer: true, type: 'timer' };
         let { error } = await supa.from('categories').insert([payload]);
         if (error) {
-            // Fallback if type column is missing in DB schema
             ({ error } = await supa.from('categories').insert([{ name: `${name} (تایمری)` }]));
         }
         if (error) throw error;
@@ -641,6 +670,7 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
         logSystemAction('ثبت سفارش بوفه', `ثبت سفارش برای ${custName} به مبلغ ${formatPrice(total)} تومان`);
         await loadInitialData();
         document.querySelector('[data-tab="settle"]').click();
+        renderSettlement();
     } catch (err) {
         console.error('Submit order error:', err);
         toast('خطا در ثبت سفارش', 'danger');
@@ -649,102 +679,7 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
     }
 });
 
-// UPDATE LIVE TIMER DEVICE CARDS IN UI
-function updateLiveDeviceCardsUI() {
-    const container = document.getElementById('liveDevicesContainer');
-    if (!container) return;
-
-    const timerDevices = localMenu.filter(m => m.is_timer);
-    if (!timerDevices.length) {
-        container.innerHTML = '<div class="empty-state">هیچ دستگاه تایمری تعریف نشده است (از بخش مدیریت منو اضافه کنید)</div>';
-        return;
-    }
-
-    container.innerHTML = timerDevices.map(device => {
-        const players = deviceSessions[device.id] || [];
-        const isActive = players.length > 0;
-        const rate = device.hourly_rate || device.price || 0;
-
-        let playersHTML = '';
-        if (isActive) {
-            playersHTML = players.map(p => {
-                const liveSeconds = Math.max(0, Math.floor((new Date() - new Date(p.start_time)) / 1000));
-                const liveCost = getPlayerLiveCost(p, device.id);
-                return `
-                    <div class="player-item">
-                        <div><span class="player-name">${escapeHtml(p.customer_name)}</span></div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="player-timer">${formatDuration(liveSeconds)}</span>
-                            <span class="player-cost">${formatPrice(liveCost)} ت</span>
-                            <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="stopPlayerClick(${device.id}, '${escapeHtml(p.customer_name)}')">پایان</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        } else {
-            playersHTML = '<div class="text-muted small py-2">هیچ بازیکنی روی این دستگاه نیست</div>';
-        }
-
-        return `
-            <div class="device-card ${isActive ? 'active' : ''}">
-                <div class="device-header">
-                    <div class="device-title"><i class="fas fa-gamepad text-primary"></i> ${escapeHtml(device.name)}</div>
-                    <span class="device-status-badge ${isActive ? 'badge-active' : 'badge-free'}">${isActive ? `${players.length} بازیکن فعال` : 'آزاد'}</span>
-                </div>
-                <div class="device-rate"><i class="fas fa-clock text-secondary me-1"></i> نرخ هر ساعت: <strong>${formatPrice(rate)} تومان</strong> (تقسیم به ${players.length || 1} نفر)</div>
-                <div class="players-list">${playersHTML}</div>
-                <div class="device-actions">
-                    <button class="btn btn-sm btn-primary-custom flex-fill" onclick="addPlayerClick(${device.id})"><i class="fas fa-user-plus"></i> افزودن بازیکن</button>
-                    ${isActive ? `<button class="btn btn-sm btn-outline-secondary" onclick="transferPlayerClick(${device.id})"><i class="fas fa-exchange-alt"></i> انتقال</button>` : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-window.addPlayerClick = async function(deviceId) {
-    const custName = await showInputModal('افزودن بازیکن به دستگاه', 'نام بازیکن / مشتری را وارد کنید:');
-    if (!custName) return;
-    if (startDevicePlayer(deviceId, custName)) {
-        toast(`بازیکن ${custName} روی دستگاه شروع به بازی کرد`);
-        updateLiveDeviceCardsUI();
-        await loadInitialData();
-    }
-};
-
-window.stopPlayerClick = async function(deviceId, customerName) {
-    const confirmStop = await showConfirmModal('پایان بازی', `آیا بازی ${customerName} پایان یابد؟`);
-    if (!confirmStop) return;
-    const ended = stopDevicePlayer(deviceId, customerName);
-    if (ended) {
-        toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
-        updateLiveDeviceCardsUI();
-        await loadInitialData();
-        refreshOrders();
-    }
-};
-
-window.transferPlayerClick = async function(fromDeviceId) {
-    const activePlayers = (deviceSessions[fromDeviceId] || []).map(p => p.customer_name);
-    if (!activePlayers.length) return;
-    const selectedPlayer = await showInputModal('انتقال بازیکن', `نام بازیکن منتقل‌شونده: (${activePlayers.join('، ')})`, activePlayers[0]);
-    if (!selectedPlayer || !activePlayers.includes(selectedPlayer)) return;
-
-    const otherDevices = localMenu.filter(m => m.is_timer && m.id !== fromDeviceId);
-    if (!otherDevices.length) { toast('دستگاه تایمری دیگری وجود ندارد', 'warning'); return; }
-    
-    const deviceNames = otherDevices.map((d, idx) => `${idx + 1}. ${d.name}`).join(' | ');
-    const targetIdxStr = await showInputModal('انتخاب دستگاه مقصد', `شماره دستگاه مقصد را وارد کنید:\n${deviceNames}`, '1');
-    const targetIdx = parseInt(targetIdxStr);
-    const chosen = otherDevices[targetIdx - 1];
-    if (chosen) {
-        transferDevicePlayer(fromDeviceId, chosen.id, selectedPlayer);
-        updateLiveDeviceCardsUI();
-        await loadInitialData();
-    }
-};
-
-// 7. SETTLEMENT TAB
+// 7. SETTLEMENT TAB (INSTANT REFRESH ON ACTION)
 document.getElementById('settleSearch').addEventListener('input', renderSettlement);
 
 function renderSettlement() {
@@ -832,8 +767,11 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
 
         toast(`تسویه حساب ${customerName} با موفقیت ثبت شد (${method})`);
         logSystemAction('تسویه حساب', `تسویه فاکتور ${customerName} به روش ${method} توسط ${settledBy}`);
+        
         await loadInitialData();
-        refreshOrders();
+        renderSettlement();
+        renderHistory();
+        renderDashboard();
     } catch (err) {
         console.error('Settle group error:', err);
         toast('خطا در تسویه حساب', 'danger');

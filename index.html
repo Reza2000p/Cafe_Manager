@@ -102,13 +102,26 @@
                 </div>
             </div>
 
-            <!-- Timer Devices Tab -->
+            <!-- Timer Devices Tab (With Search & Category Filter) -->
             <div class="tab-pane" id="tab-timers">
                 <div class="card-modern">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="fw-bold m-0"><i class="fas fa-gamepad text-primary me-1"></i> دستگاه‌های بازی و تایمرهای زنده</h6>
                         <small class="text-muted"><i class="fas fa-sync fa-spin me-1"></i> تایمر زنده فعال است</small>
                     </div>
+
+                    <!-- Search and Filter Bar for Timer Devices -->
+                    <div class="row g-2 mb-3 bg-light p-2 rounded">
+                        <div class="col-12 col-md-7">
+                            <input type="text" id="timerDeviceSearch" class="form-control form-control-sm" placeholder="جستجوی نام دستگاه (مثال: پی اس ۵، بیلیارد)...">
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <select id="timerDeviceCatFilter" class="form-select form-select-sm">
+                                <option value="">همه دسته‌بندی‌های دستگاه‌ها</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div id="liveDevicesContainer" class="device-grid"></div>
                 </div>
             </div>
