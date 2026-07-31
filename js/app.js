@@ -118,20 +118,21 @@ document.getElementById('logoutBtn').addEventListener('click', async (e) => {
     await supa.auth.signOut();
 });
 
-// 2. DATA LOADING & REALTIME
+// 2. DATA LOADING & REALTIME PERSISTENCE
 async function loadInitialData() {
     try {
         const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
         userProfile = prof || { full_name: currentUser.email, role: 'staff' };
         document.getElementById('currentUser').textContent = userProfile.full_name || currentUser.email;
 
-        const [menuRes, catsRes, ordersRes, profilesRes, custRes, logsRes] = await Promise.all([
+        const [menuRes, catsRes, ordersRes, profilesRes, custRes, logsRes, activeSessionsRes] = await Promise.all([
             supa.from('menu_items').select('*'),
             supa.from('categories').select('*'),
             supa.from('orders').select('*').order('created_at', { ascending: false }),
             supa.from('profiles').select('*'),
             supa.from('customers').select('*').order('created_at', { ascending: false }),
-            supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100)
+            supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
+            supa.from('active_timer_sessions').select('*')
         ]);
 
         localMenu = menuRes.data || [];
@@ -140,6 +141,11 @@ async function loadInitialData() {
         localProfiles = profilesRes.data || [];
         localCustomers = custRes.data || [];
         localLogs = logsRes.data || [];
+
+        // Parse Active Device Sessions from Supabase so ALL phones/computers see the exact same active players
+        if (activeSessionsRes && activeSessionsRes.data) {
+            parseSupabaseActiveSessions(activeSessionsRes.data);
+        }
 
         populateFilters();
         populateCatSelects();
@@ -152,7 +158,7 @@ async function loadInitialData() {
 function initRealtime() {
     if (!supa) return;
     
-    // DB Mutations Listener (Cross-Device Realtime Sync)
+    // DB Mutations Listener (Cross-Device Realtime Sync for Orders, Menu, Cats, Customers & Active Sessions)
     supa.channel('public-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async payload => { 
             await loadInitialData();
@@ -170,14 +176,10 @@ function initRealtime() {
             await loadInitialData();
             refreshCustomers(); 
         })
-        .subscribe();
-
-    // Broadcast Listener for Live Device Timer Sessions
-    supa.channel('cafe-active-sessions')
-        .on('broadcast', { event: 'sessions_sync' }, payload => {
-            if (payload && payload.sessions) {
-                deviceSessions = payload.sessions;
-                saveDeviceSessionsToStorage();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'active_timer_sessions' }, async payload => { 
+            const { data } = await supa.from('active_timer_sessions').select('*');
+            if (data) {
+                parseSupabaseActiveSessions(data);
                 updateLiveDeviceCardsUI();
             }
         })

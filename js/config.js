@@ -19,7 +19,7 @@ let localProfiles = [];   // Staff profiles
 let localCustomers = [];  // Customers list
 let localLogs = [];       // System action logs
 
-// Timer Device Active Sessions (stored in memory & sync with localStorage)
+// Timer Device Active Sessions (Synced in Realtime via Supabase)
 let deviceSessions = {}; 
 
 try {
@@ -29,6 +29,31 @@ try {
 
 function saveDeviceSessionsToStorage() {
     try { localStorage.setItem('cafe_device_sessions', JSON.stringify(deviceSessions)); } catch(e){}
+}
+
+// Convert Supabase active_timer_sessions rows array to deviceSessions dictionary
+function parseSupabaseActiveSessions(rows) {
+    const dict = {};
+    if (Array.isArray(rows)) {
+        rows.forEach(r => {
+            const devId = r.device_id;
+            if (!dict[devId]) dict[devId] = [];
+            dict[devId].push({
+                id: r.id,
+                device_id: r.device_id,
+                device_name: r.device_name,
+                customer_name: r.customer_name,
+                hourly_rate: Number(r.hourly_rate || 0),
+                start_time: r.start_time,
+                current_segment_start: r.current_segment_start || r.start_time,
+                accumulated_cost: Number(r.accumulated_cost || 0),
+                accumulated_seconds: Number(r.accumulated_seconds || 0),
+                end_time: null
+            });
+        });
+    }
+    deviceSessions = dict;
+    saveDeviceSessionsToStorage();
 }
 
 // ==========================================
@@ -46,7 +71,7 @@ function toast(msg, type = 'success') {
     div.className = `alert alert-${type} shadow-lg py-2 px-3 mb-2 rounded-3 text-center`; 
     div.innerHTML = `<span class="fw-bold">${escapeHtml(msg)}</span>`;
     c.appendChild(div); 
-    setTimeout(() => div.remove(), 2500);
+    setTimeout(() => div.remove(), 3000);
 }
 
 function formatPrice(p) { 
