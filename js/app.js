@@ -1104,6 +1104,16 @@ function renderReports() {
         document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
     } 
     else if (activeSubTab === 'logs') {
+        let logs = localLogs;
+        if (fromD) {
+            const fromDate = new Date(fromD + 'T00:00:00');
+            logs = logs.filter(l => new Date(l.created_at) >= fromDate);
+        }
+        if (toD) {
+            const toDate = new Date(toD + 'T23:59:59.999');
+            logs = logs.filter(l => new Date(l.created_at) <= toDate);
+        }
+
         document.getElementById('logReportContent').innerHTML = `
             <div class="table-responsive mt-3">
                 <table class="log-table">
@@ -1116,7 +1126,7 @@ function renderReports() {
                         </tr>
                     </thead>
                     <tbody>
-                        ${localLogs.length ? localLogs.map(l => {
+                        ${logs.length ? logs.map(l => {
                             const d = new Date(l.created_at);
                             const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
                             return `
@@ -1127,7 +1137,7 @@ function renderReports() {
                                     <td>${escapeHtml(l.details)}</td>
                                 </tr>
                             `;
-                        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">هیچ رویدادی ثبت نشده است</td></tr>'}
+                        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">هیچ رویدادی در این بازه زمانی ثبت نشده است</td></tr>'}
                     </tbody>
                 </table>
             </div>
