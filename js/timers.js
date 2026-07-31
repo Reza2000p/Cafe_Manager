@@ -1,6 +1,20 @@
 // ==========================================
-// TIMER & DEVICE LOGIC ENGINE (SEGMENT-BASED ACCURATE SPLIT BILLING)
+// TIMER & DEVICE LOGIC ENGINE (REALTIME SYNC & UNIQUE PLAYER CONSTRAINT)
 // ==========================================
+
+// Helper: Check if a player name is currently active on ANY device
+function findActivePlayerAnywhere(customerName) {
+    if (!customerName) return null;
+    const cleanName = customerName.trim().toLowerCase();
+    for (const [devId, players] of Object.entries(deviceSessions)) {
+        if (!players || !players.length) continue;
+        const activeP = players.find(p => !p.end_time && (p.customer_name || '').trim().toLowerCase() === cleanName);
+        if (activeP) {
+            return activeP;
+        }
+    }
+    return null;
+}
 
 // Helper: Get exact hourly rate of a device from menu
 function getDeviceHourlyRate(device) {
@@ -33,18 +47,27 @@ function updateDeviceActivePlayersSegments(deviceId) {
     });
 }
 
-// Add a player to a timer device
+// Add a player to a timer device with Unique Name Check Across All Devices
 function startDevicePlayer(deviceId, customerName) {
-    if (!deviceId || !customerName) return false;
+    if (!deviceId || !customerName || !customerName.trim()) return false;
+    const cleanName = customerName.trim();
+
     const device = localMenu.find(m => m.id === deviceId && m.is_timer);
     if (!device) {
-        toast('دستگاه یافت نشد', 'danger');
+        toast('دستگاه مورد نظر یافت نشد', 'danger');
         return false;
     }
 
     const rate = getDeviceHourlyRate(device);
     if (rate <= 0) {
-        toast('نرخ این دستگاه در منو صفر ثبت شده است! لطفا از بخش منو نرخ ساعتی را ویرایش کنید.', 'danger');
+        toast('نرخ ساعتی این دستگاه در سیستم ثبت نشده است. لطفاً ابتدا از بخش مدیریت منو، نرخ دستگاه را وارد کنید.', 'danger');
+        return false;
+    }
+
+    // CHECK IF PLAYER IS ALREADY PLAYING ON ANY DEVICE
+    const activeElsewhere = findActivePlayerAnywhere(cleanName);
+    if (activeElsewhere) {
+        toast(`مشتری محترم «${escapeHtml(cleanName)}» هم‌اکنون روی دستگاه «${escapeHtml(activeElsewhere.device_name)}» در حال بازی است. ثبت همزمان یک نام روی چند دستگاه امکان‌پذیر نمی‌باشد.`, 'warning');
         return false;
     }
 
@@ -52,14 +75,7 @@ function startDevicePlayer(deviceId, customerName) {
         deviceSessions[deviceId] = [];
     }
 
-    // Check if player is already active on this device
-    const existing = deviceSessions[deviceId].find(p => p.customer_name === customerName && !p.end_time);
-    if (existing) {
-        toast('این بازیکن در حال حاضر روی این دستگاه فعال است', 'warning');
-        return false;
-    }
-
-    // UPDATE EXISITING PLAYERS' ACCUMULATED SEGMENTS BEFORE N INCREASES
+    // UPDATE EXISTING PLAYERS' ACCUMULATED SEGMENTS BEFORE N INCREASES
     updateDeviceActivePlayersSegments(deviceId);
 
     const nowIso = new Date().toISOString();
@@ -67,7 +83,7 @@ function startDevicePlayer(deviceId, customerName) {
         id: Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         device_id: deviceId,
         device_name: device.name,
-        customer_name: customerName,
+        customer_name: cleanName,
         hourly_rate: rate,
         start_time: nowIso,
         current_segment_start: nowIso,
@@ -76,13 +92,13 @@ function startDevicePlayer(deviceId, customerName) {
         end_time: null
     });
 
-    saveDeviceSessionsToStorage();
-    logSystemAction('شروع بازی', `شروع بازی ${customerName} روی دستگاه ${device.name}`);
+    broadcastSessionsSync();
+    logSystemAction('شروع بازی', `شروع بازی ${cleanName} روی دستگاه ${device.name}`);
     return true;
 }
 
-// End a player's session on a device
-function stopDevicePlayer(deviceId, customerName) {
+// End a player's session on a device (ASYNC FOR SYNCHRONOUS DB SAVING)
+async function stopDevicePlayer(deviceId, customerName) {
     if (!deviceSessions[deviceId]) return null;
     const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
     if (playerIndex === -1) return null;
@@ -104,10 +120,10 @@ function stopDevicePlayer(deviceId, customerName) {
 
     // Remove from active list
     deviceSessions[deviceId].splice(playerIndex, 1);
-    saveDeviceSessionsToStorage();
+    broadcastSessionsSync();
 
-    // Attach completed timer session to customer's pending order
-    attachTimerSessionToCustomerOrder(customerName, playerSession);
+    // Attach completed timer session to customer's pending order IN DATABASE
+    await attachTimerSessionToCustomerOrder(customerName, playerSession);
 
     logSystemAction('پایان بازی', `پایان بازی ${customerName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(finalCost)} تومان)`);
     return playerSession;
@@ -131,7 +147,7 @@ function getPlayerLiveCost(playerSession, deviceId) {
     return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
 }
 
-// Attach finished timer session to customer's pending order in localOrders / Supabase
+// Attach finished timer session to customer's pending order in localOrders & Supabase
 async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
     let pendingOrder = localOrders.find(o => o.customer_name === customerName && o.status === 'معلق');
     const timerItem = {
@@ -175,6 +191,8 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
                 const { data, error } = await supa.from('orders').insert([newOrder]).select();
                 if (data && data[0]) {
                     localOrders.unshift(data[0]);
+                } else {
+                    localOrders.unshift(newOrder);
                 }
             } catch(e) { 
                 localOrders.unshift(newOrder);
@@ -266,6 +284,20 @@ function updateLiveDeviceCardsUI() {
     }).join('');
 }
 
+// Broadcast sessions to other tabs / devices
+function broadcastSessionsSync() {
+    saveDeviceSessionsToStorage();
+    if (supa) {
+        try {
+            supa.channel('cafe-active-sessions').send({
+                type: 'broadcast',
+                event: 'sessions_sync',
+                sessions: deviceSessions
+            });
+        } catch(e){}
+    }
+}
+
 // Custom Modal Event Handlers for Device Timers
 window.addPlayerClick = async function(deviceId) {
     const custName = await showInputModal('افزودن بازیکن به دستگاه', 'نام بازیکن / مشتری را وارد کنید:');
@@ -280,10 +312,23 @@ window.addPlayerClick = async function(deviceId) {
 window.stopPlayerClick = async function(deviceId, customerName) {
     const confirmStop = await showConfirmModal('پایان بازی', `آیا بازی ${customerName} پایان یابد؟`);
     if (!confirmStop) return;
-    const ended = stopDevicePlayer(deviceId, customerName);
-    if (ended) {
-        toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
-        updateLiveDeviceCardsUI();
-        if (typeof refreshOrders === 'function') await refreshOrders();
+    
+    uiLoading(true);
+    try {
+        const ended = await stopDevicePlayer(deviceId, customerName);
+        if (ended) {
+            toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
+            if (typeof loadInitialData === 'function') await loadInitialData();
+            updateLiveDeviceCardsUI();
+            if (typeof renderOrdersTab === 'function') renderOrdersTab();
+            if (typeof renderSettlement === 'function') renderSettlement();
+            if (typeof renderHistory === 'function') renderHistory();
+            if (typeof renderDashboard === 'function') renderDashboard();
+        }
+    } catch(err) {
+        console.error('Error stopping player:', err);
+        toast('خطا در پایان بازی', 'danger');
+    } finally {
+        uiLoading(false);
     }
 };

@@ -151,11 +151,36 @@ async function loadInitialData() {
 
 function initRealtime() {
     if (!supa) return;
-    supa.channel('public-tables')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => { refreshOrders(); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, payload => { refreshMenu(); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => { refreshCats(); })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, payload => { refreshCustomers(); })
+    
+    // DB Mutations Listener (Cross-Device Realtime Sync)
+    supa.channel('public-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async payload => { 
+            await loadInitialData();
+            refreshOrders(); 
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, async payload => { 
+            await loadInitialData();
+            refreshMenu(); 
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, async payload => { 
+            await loadInitialData();
+            refreshCats(); 
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, async payload => { 
+            await loadInitialData();
+            refreshCustomers(); 
+        })
+        .subscribe();
+
+    // Broadcast Listener for Live Device Timer Sessions
+    supa.channel('cafe-active-sessions')
+        .on('broadcast', { event: 'sessions_sync' }, payload => {
+            if (payload && payload.sessions) {
+                deviceSessions = payload.sessions;
+                saveDeviceSessionsToStorage();
+                updateLiveDeviceCardsUI();
+            }
+        })
         .subscribe();
 }
 
@@ -244,7 +269,7 @@ function showPage(page) {
     if (page !== 'login') {
         if (page === 'dashboard') renderDashboard();
         if (page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
-        if (page === 'orders') { renderOrdersTab(); }
+        if (page === 'orders') { renderOrdersTab(); renderSettlement(); }
         if (page === 'reports') { renderReports(); }
         if (page === 'system') { renderUsers(); renderCustomersList(); }
     }
@@ -1184,9 +1209,10 @@ window.editCustomer = async function(oldName) {
         if (err2) throw err2;
 
         toast('مشخصات مشتری با موفقیت ویرایش شد');
-        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${cleanNewName}`);
+        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${newName}`);
         await loadInitialData();
         renderCustomersList();
+        renderSettlement();
     } catch (err) {
         console.error('Edit customer error:', err);
         toast('خطا در ویرایش اطلاعات مشتری', 'danger');
