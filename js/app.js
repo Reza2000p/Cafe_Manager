@@ -16,16 +16,24 @@ function showConfirmModal(title, text) {
     return new Promise((resolve) => {
         document.getElementById('confirmModalTitle').textContent = title || 'تأیید عملیات';
         document.getElementById('confirmModalBody').textContent = text || 'آیا مطمئن هستید؟';
-        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const modalEl = document.getElementById('confirmModal');
+        const modal = new bootstrap.Modal(modalEl);
         const actionBtn = document.getElementById('confirmModalActionBtn');
+        let confirmed = false;
         
         const onConfirm = () => {
-            actionBtn.removeEventListener('click', onConfirm);
+            confirmed = true;
             modal.hide();
-            resolve(true);
+        };
+
+        const onHidden = () => {
+            actionBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(confirmed);
         };
         
-        actionBtn.onclick = onConfirm;
+        actionBtn.addEventListener('click', onConfirm, { once: true });
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
         modal.show();
     });
 }
@@ -37,17 +45,25 @@ function showInputModal(title, label, defaultValue = '') {
         const inputEl = document.getElementById('inputModalValue');
         inputEl.value = defaultValue;
         
-        const modal = new bootstrap.Modal(document.getElementById('inputModal'));
+        const modalEl = document.getElementById('inputModal');
+        const modal = new bootstrap.Modal(modalEl);
         const actionBtn = document.getElementById('inputModalActionBtn');
+        let resultValue = null;
         
         const onConfirm = () => {
             const val = inputEl.value;
-            actionBtn.removeEventListener('click', onConfirm);
+            resultValue = val ? val.trim() : null;
             modal.hide();
-            resolve(val ? val.trim() : null);
+        };
+
+        const onHidden = () => {
+            actionBtn.removeEventListener('click', onConfirm);
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(resultValue);
         };
         
-        actionBtn.onclick = onConfirm;
+        actionBtn.addEventListener('click', onConfirm, { once: true });
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
         modal.show();
     });
 }
@@ -86,6 +102,14 @@ async function initApp() {
         if (event === 'SIGNED_OUT') {
             currentUser = null;
             userProfile = null;
+            if (realtimePollingInterval) {
+                clearInterval(realtimePollingInterval);
+                realtimePollingInterval = null;
+            }
+            if (globalChannel) {
+                try { supa.removeChannel(globalChannel); } catch(e){}
+                globalChannel = null;
+            }
             document.getElementById('logoutBtn').style.display = 'none';
             showPage('login');
         }
@@ -169,16 +193,25 @@ async function silentRefreshData() {
     if (isRefreshingSilently || !currentUser) return;
     isRefreshingSilently = true;
     try {
-        const [ordersRes, menuRes, catsRes, activeSessionsRes] = await Promise.all([
+        const [ordersRes, menuRes, catsRes, activeSessionsRes, custRes, logsRes, profilesRes] = await Promise.all([
             supa.from('orders').select('*').order('created_at', { ascending: false }),
             supa.from('menu_items').select('*'),
             supa.from('categories').select('*'),
-            supa.from('active_timer_sessions').select('*')
+            supa.from('active_timer_sessions').select('*'),
+            supa.from('customers').select('*').order('created_at', { ascending: false }),
+            supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
+            supa.from('profiles').select('*')
         ]);
 
         if (ordersRes && ordersRes.data) localOrders = ordersRes.data;
         if (menuRes && menuRes.data) localMenu = menuRes.data;
         if (catsRes && catsRes.data) localCats = catsRes.data;
+        if (custRes && custRes.data) localCustomers = custRes.data;
+        if (logsRes && logsRes.data) localLogs = logsRes.data;
+        if (profilesRes && profilesRes.data) {
+            localProfiles = profilesRes.data;
+            populateFilters();
+        }
         if (activeSessionsRes && activeSessionsRes.data) parseSupabaseActiveSessions(activeSessionsRes.data);
 
         // SILENTLY RE-RENDER ACTIVE VIEW
@@ -192,6 +225,11 @@ async function silentRefreshData() {
             renderDashboard();
         } else if (activePage === 'page-menu') {
             renderMenu();
+        } else if (activePage === 'page-reports') {
+            renderReports();
+        } else if (activePage === 'page-system') {
+            renderUsers();
+            renderCustomersList();
         }
     } catch(e) {
     } finally {
@@ -200,10 +238,13 @@ async function silentRefreshData() {
 }
 
 // BROADCAST SIGNAL TO ALL CONNECTED CLIENTS (INSTANT SYNC)
+let globalChannel = null;
+let realtimePollingInterval = null;
+
 function broadcastGlobalSync() {
-    if (supa) {
+    if (supa && globalChannel) {
         try {
-            supa.channel('global-cafe-channel').send({
+            globalChannel.send({
                 type: 'broadcast',
                 event: 'sync_all'
             });
@@ -214,22 +255,27 @@ function broadcastGlobalSync() {
 function initRealtime() {
     if (!supa) return;
     
-    const channel = supa.channel('global-cafe-channel');
+    if (globalChannel) {
+        try { supa.removeChannel(globalChannel); } catch(e){}
+    }
+    
+    globalChannel = supa.channel('global-cafe-channel');
 
     // 1. Broadcast Listener (Fires INSTANTLY across all devices and phones)
-    channel.on('broadcast', { event: 'sync_all' }, async () => {
+    globalChannel.on('broadcast', { event: 'sync_all' }, async () => {
         await silentRefreshData();
     });
 
     // 2. Postgres DB Changes Listener
-    channel.on('postgres_changes', { event: '*', schema: 'public' }, async () => {
+    globalChannel.on('postgres_changes', { event: '*', schema: 'public' }, async () => {
         await silentRefreshData();
     });
 
-    channel.subscribe();
+    globalChannel.subscribe();
 
     // 3. Fallback Polling (Every 3 Seconds Continuously) for 100% Guaranteed Cross-Device Sync
-    setInterval(async () => {
+    if (realtimePollingInterval) clearInterval(realtimePollingInterval);
+    realtimePollingInterval = setInterval(async () => {
         if (currentUser) {
             await silentRefreshData();
         }
@@ -1238,6 +1284,21 @@ window.editCustomer = async function(oldName) {
         if (err1) throw err1;
         const { error: err2 } = await supa.from('orders').update({ customer_name: newName }).eq('customer_name', oldName);
         if (err2) throw err2;
+
+        try {
+            await supa.from('active_timer_sessions').update({ customer_name: newName }).eq('customer_name', oldName);
+        } catch(e){}
+
+        for (const devId in deviceSessions) {
+            if (Array.isArray(deviceSessions[devId])) {
+                deviceSessions[devId].forEach(p => {
+                    if (p.customer_name === oldName) {
+                        p.customer_name = newName;
+                    }
+                });
+            }
+        }
+        saveDeviceSessionsToStorage();
 
         toast('مشخصات مشتری با موفقیت ویرایش شد');
         logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${newName}`);

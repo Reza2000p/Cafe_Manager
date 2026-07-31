@@ -320,7 +320,7 @@ function updateLiveDeviceCardsUI() {
                         <div class="d-flex align-items-center gap-2">
                             <span class="player-timer">${formatDuration(liveSeconds)}</span>
                             <span class="player-cost">${formatPrice(liveCost)} ت</span>
-                            <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="stopPlayerClick(${device.id}, '${escapeHtml(p.customer_name)}')">پایان</button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-2" data-device-id="${device.id}" data-customer-name="${escapeHtml(p.customer_name)}" onclick="stopPlayerBtnClick(this)">پایان</button>
                         </div>
                     </div>
                 `;
@@ -362,6 +362,13 @@ window.addPlayerClick = async function(deviceId) {
     } finally {
         uiLoading(false);
     }
+};
+
+window.stopPlayerBtnClick = function(btnEl) {
+    if (!btnEl) return;
+    const deviceId = Number(btnEl.dataset.deviceId);
+    const customerName = btnEl.dataset.customerName;
+    stopPlayerClick(deviceId, customerName);
 };
 
 window.stopPlayerClick = async function(deviceId, customerName) {
