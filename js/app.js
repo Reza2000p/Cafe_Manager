@@ -212,7 +212,7 @@ setupTabs('historySubTabs', 'historySubTabContent', (tab) => { renderHistory(); 
 setupTabs('catSubTabs', 'catSubTabContent', (tab) => { renderCats(); });
 setupTabs('reportSubTabs', 'reportSubTabContent', (tab) => { renderReports(); });
 
-// 4. DASHBOARD (WITH TOP STATIC ITEMS & TOP TIMER DEVICES)
+// 4. DASHBOARD
 document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
 
 function renderDashboard() {
@@ -261,7 +261,7 @@ function renderDashboard() {
     const topItems = Object.entries(itemMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 
-    // Top Timer Devices (Most used & revenue)
+    // Top Timer Devices
     const deviceMap = {};
     settledOrders.forEach(o => {
         (o.items || []).forEach(i => {
@@ -287,7 +287,7 @@ function renderDashboard() {
     document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 }
 
-// 5. MENU & CATEGORIES MANAGEMENT
+// 5. MENU & CATEGORIES MANAGEMENT (WITH EDIT & SUPABASE FALLBACK)
 function populateCatSelects() {
     let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     document.getElementById('menuFormCat').innerHTML = opts;
@@ -385,7 +385,7 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
 
     uiLoading(true);
     try {
-        const payload = { name, cat, price: isTimer ? price : price, is_timer: isTimer, hourly_rate: isTimer ? price : 0 };
+        const payload = { name, cat, price: price, is_timer: isTimer, hourly_rate: isTimer ? price : 0 };
         let error;
         if (id) {
             ({ error } = await supa.from('menu_items').update(payload).eq('id', id));
@@ -409,23 +409,41 @@ function renderCats() {
     const timerCats = localCats.filter(c => c.type === 'timer');
 
     document.getElementById('catStaticList').innerHTML = staticCats.length ? staticCats.map(c => `
-        <li class="list-group-item d-flex justify-content-between align-items-center p-2">${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>
+        <li class="list-group-item d-flex justify-content-between align-items-center p-2">
+            <span>${escapeHtml(c.name)}</span>
+            <div>
+                <button class="btn btn-sm btn-outline-warning py-0 me-1" onclick="editCat(${c.id}, '${escapeHtml(c.name)}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button>
+            </div>
+        </li>
     `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی ثابتی وجود ندارد</li>';
 
     document.getElementById('catTimerList').innerHTML = timerCats.length ? timerCats.map(c => `
-        <li class="list-group-item d-flex justify-content-between align-items-center p-2"><i class="fas fa-gamepad me-1 text-primary"></i> ${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>
+        <li class="list-group-item d-flex justify-content-between align-items-center p-2">
+            <span><i class="fas fa-gamepad me-1 text-primary"></i> ${escapeHtml(c.name)}</span>
+            <div>
+                <button class="btn btn-sm btn-outline-warning py-0 me-1" onclick="editCat(${c.id}, '${escapeHtml(c.name)}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button>
+            </div>
+        </li>
     `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی تایمری وجود ندارد</li>';
 }
 
+// RESILIENT CATEGORY ADDITION WITH SCHEMA FALLBACK
 document.getElementById('addCatStaticBtn').addEventListener('click', async () => {
     const name = document.getElementById('newCatStaticName').value.trim();
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').insert([{ name, type: 'static' }]);
+        let { error } = await supa.from('categories').insert([{ name, type: 'static' }]);
+        if (error && (error.code === 'PGRST204' || error.message.includes("type"))) {
+            // Schema fallback if type column does not exist in Supabase DB
+            ({ error } = await supa.from('categories').insert([{ name }]));
+        }
         if (error) throw error;
         document.getElementById('newCatStaticName').value = '';
         toast('دسته‌بندی ثابت‌ها افزوده شد');
+        logSystemAction('افزودن دسته‌بندی', `دسته ثابت ${name} افزوده شد`);
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
@@ -435,13 +453,30 @@ document.getElementById('addCatTimerBtn').addEventListener('click', async () => 
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').insert([{ name, type: 'timer' }]);
+        let { error } = await supa.from('categories').insert([{ name, type: 'timer' }]);
+        if (error && (error.code === 'PGRST204' || error.message.includes("type"))) {
+            ({ error } = await supa.from('categories').insert([{ name }]));
+        }
         if (error) throw error;
         document.getElementById('newCatTimerName').value = '';
         toast('دسته‌بندی تایمری‌ها افزوده شد');
+        logSystemAction('افزودن دسته‌بندی', `دسته تایمری ${name} افزوده شد`);
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
+
+window.editCat = async function(id, oldName) {
+    const newName = prompt('نام جدید دسته‌بندی را وارد کنید:', oldName);
+    if (!newName || newName.trim() === '' || newName === oldName) return;
+    uiLoading(true);
+    try {
+        const { error } = await supa.from('categories').update({ name: newName.trim() }).eq('id', id);
+        if (error) throw error;
+        toast('دسته‌بندی با موفقیت ویرایش شد');
+        logSystemAction('ویرایش دسته‌بندی', `تغییر نام دسته از ${oldName} به ${newName.trim()}`);
+    } catch (err) { console.error('Edit cat error:', err); toast('خطا در ویرایش دسته', 'danger'); }
+    finally { uiLoading(false); }
+};
 
 window.deleteCat = async function(id) {
     if (!confirm('حذف دسته؟')) return;
@@ -641,12 +676,35 @@ window.transferPlayerClick = function(fromDeviceId) {
     }
 };
 
-// 7. SETTLEMENT WITH DETAILED BREAKDOWN
+// 7. SETTLEMENT WITH DATE FILTERS & CLEANED CARD BUTTONS
+let currentSettleFilterMode = 'today';
+
+window.setSettleDate = function(mode, btnEl) {
+    if (btnEl) {
+        document.querySelectorAll('#tab-settle .quick-date-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+    }
+    currentSettleFilterMode = mode;
+    renderSettlement();
+};
+
 document.getElementById('settleSearch').addEventListener('input', renderSettlement);
 
 function renderSettlement() {
     const sq = document.getElementById('settleSearch').value.trim().toLowerCase();
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
     let pending = localOrders.filter(o => o.status === 'معلق');
+
+    if (currentSettleFilterMode === 'today') {
+        pending = pending.filter(o => new Date(o.created_at) >= startOfToday);
+    } else if (currentSettleFilterMode === '3days' || currentSettleFilterMode === 'week') {
+        const limitDate = new Date(startOfToday);
+        limitDate.setDate(limitDate.getDate() - (currentSettleFilterMode === '3days' ? 2 : 6));
+        pending = pending.filter(o => new Date(o.created_at) >= limitDate);
+    }
+
     if (sq) pending = pending.filter(o => (o.customer_name || '').toLowerCase().includes(sq));
 
     const groups = {};
@@ -660,7 +718,7 @@ function renderSettlement() {
 
     const listDiv = document.getElementById('pendingOrdersList');
     const keys = Object.keys(groups);
-    if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">هیچ سفارش یا فاکتور بازی جهت تسویه وجود ندارد</div>'; return; }
+    if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">هیچ فاکتور معلقی جهت تسویه وجود ندارد</div>'; return; }
 
     listDiv.innerHTML = keys.map(custName => {
         const g = groups[custName];
@@ -688,17 +746,17 @@ function renderSettlement() {
                 <div class="invoice-header">
                     <div>
                         <strong class="fs-5 text-dark"><i class="fas fa-user-circle text-primary me-1"></i> ${escapeHtml(custName)}</strong>
-                        <div class="small text-muted mt-1">ثبت کننده: ${escapeHtml(g.createdBy)}</div>
+                        <div class="small text-muted mt-1">ثبت‌کننده: ${escapeHtml(g.createdBy)}</div>
                     </div>
                     <div class="text-end">
                         <div class="fs-5 fw-bold text-success">${formatPrice(g.total)} تومان</div>
-                        <small class="text-muted">${g.ids.length} فاکتور معلق</small>
+                        <small class="text-muted">${g.ids.length} فاکتور</small>
                     </div>
                 </div>
 
                 <div class="invoice-details mb-3">
-                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌های تایمری:</div>${timerRows}` : ''}
-                    ${staticItems.length ? `<div class="invoice-section-title"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه و کافه:</div>${staticRows}` : ''}
+                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌ها:</div>${timerRows}` : ''}
+                    ${staticItems.length ? `<div class="invoice-section-title"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
                     <div class="invoice-total-row">
                         <span>مجموع قابل پرداخت:</span>
                         <span>${formatPrice(g.total)} تومان</span>
@@ -706,8 +764,8 @@ function renderSettlement() {
                 </div>
 
                 <div class="d-flex gap-2">
-                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> تسویه نقدی</button>
-                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> تسویه کارتخوان</button>
+                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> نقدی</button>
+                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> کارتخوان</button>
                     <button class="btn btn-outline-danger" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i> لغو</button>
                 </div>
             </div>
@@ -736,7 +794,32 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
     }
 };
 
-// 8. HISTORY (2 SUB-TABS: CREATED BY vs SETTLED BY WITH PERSIAN DATES)
+// 8. HISTORY (WITH CSV EXPORT FUNCTION)
+window.exportHistoryCSV = function() {
+    if (!localOrders || !localOrders.length) {
+        toast('تاریخچه‌ای برای دانلود وجود ندارد', 'warning');
+        return;
+    }
+
+    let csvContent = "\uFEFFشماره سفارش,مشتری,مبلغ (تومان),وضعیت,ثبت کننده,تسویه کننده,تاریخ و ساعت\n";
+    localOrders.forEach(o => {
+        const d = new Date(o.created_at);
+        const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        csvContent += `"${o.id}","${o.customer_name || ''}","${o.total || 0}","${o.status || ''}","${o.created_by || ''}","${o.settled_by || ''}","${dateStr}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cafe_history_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast('فایل CSV تاریخچه دانلود شد');
+    logSystemAction('دانلود تاریخچه', 'دریافت خروجی CSV کل تاریخچه سفارشات');
+};
+
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
 
@@ -804,10 +887,10 @@ function renderHistory() {
     if (el) el.addEventListener('change', renderHistory);
 });
 
-// 9. REPORTS (3 SUB-TABS: SALES, DEVICE PERF, SYSTEM LOGS WITH PERSIAN DATES)
+// 9. REPORTS (3 SUB-TABS: SALES, DEVICES, LOGS)
 window.setRepDate = function(mode, btnEl) {
     if (btnEl) {
-        document.querySelectorAll('.quick-date-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#page-reports .quick-date-btn').forEach(b => b.classList.remove('active'));
         btnEl.classList.add('active');
     }
     const dFrom = document.getElementById('reportDateFrom');
@@ -965,7 +1048,7 @@ window.printReportHTML = function() {
     setTimeout(() => { pr.print(); pr.close(); }, 500);
 };
 
-// 10. SYSTEM & CUSTOMER FULL STATS DETAIL MODAL
+// 10. SYSTEM & FULL PAGE CUSTOMER STATS DETAIL
 function renderUsers() {
     document.getElementById('userList').innerHTML = localProfiles.map(u => `
         <div class="d-flex justify-content-between align-items-center border-bottom py-2">
@@ -1003,7 +1086,7 @@ function renderCustomersList() {
                     <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} فاکتور تسویه شده | <i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-sm btn-primary-custom" data-name="${escapeHtml(c.full_name)}" onclick="viewCustomerStats(this.dataset.name)"><i class="fas fa-chart-line me-1"></i> مشاهده آمار کامل</button>
+                    <button class="btn btn-sm btn-primary-custom" data-name="${escapeHtml(c.full_name)}" onclick="viewCustomerStats(this.dataset.name)"><i class="fas fa-chart-line me-1"></i> آمار کامل</button>
                     <button class="btn btn-sm btn-outline-secondary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش</button>
                 </div>
             </div>
@@ -1011,7 +1094,7 @@ function renderCustomersList() {
     }).join('') : '<div class="empty-state">مشتری یافت نشد</div>';
 }
 
-// FULL CUSTOMER STATS MODAL RENDERER
+// FULL PAGE CUSTOMER STATS RENDERER
 window.viewCustomerStats = function(custName) {
     const custOrders = localOrders.filter(o => o.customer_name === custName && o.status !== 'لغو');
     const settledOrders = custOrders.filter(o => o.status !== 'معلق');
@@ -1032,45 +1115,56 @@ window.viewCustomerStats = function(custName) {
     });
 
     const itemsSummaryHTML = Object.entries(itemsPurchasedMap).map(([name, qty]) => `
-        <div class="d-flex justify-content-between border-bottom py-1 small">
+        <div class="d-flex justify-content-between border-bottom py-2 small">
             <span>${escapeHtml(name)}</span>
             <span class="fw-bold">${qty} عدد</span>
         </div>
-    `).join('') || '<div class="text-muted small">هیچ کالا ثابتی خریداری نشده است</div>';
+    `).join('') || '<div class="text-muted small py-2">هیچ کالا ثابتی خریداری نشده است</div>';
 
     const historyOrdersHTML = custOrders.map(o => {
         const d = new Date(o.created_at);
         const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
         return `
             <div class="border-bottom py-2 small">
-                <div class="d-flex justify-content-between">
-                    <span>#${o.id} - ${dateStr}</span>
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="fw-bold">#${o.id} - ${dateStr}</span>
                     <span class="fw-bold text-success">${formatPrice(o.total)} تومان</span>
                 </div>
-                <div class="d-flex justify-content-between align-items-center mt-1">
-                    <span class="text-muted">روش: ${escapeHtml(o.status)} | ثبت: ${escapeHtml(o.created_by || '-')}</span>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">ثبت: ${escapeHtml(o.created_by || '-')} | تسویه: ${escapeHtml(o.settled_by || '-')}</span>
                     <span class="badge ${o.status==='نقدی'?'bg-success':o.status==='کارت'?'bg-info':'bg-warning'}">${escapeHtml(o.status)}</span>
                 </div>
             </div>
         `;
     }).join('') || '<div class="empty-state">سفارشی برای این مشتری وجود ندارد</div>';
 
-    document.getElementById('custModalTitle').innerHTML = `<i class="fas fa-user-circle me-1"></i> آمار کامل مشتری: <strong>${escapeHtml(custName)}</strong>`;
-    document.getElementById('custModalBody').innerHTML = `
-        <div class="row g-2 mb-3">
-            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-primary">${settledOrders.length}</div><small>فاکتور تسویه شده</small></div></div>
-            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-success">${formatPrice(totalSpent)} ت</div><small>مجموع خرید</small></div></div>
-            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-warning">${totalTimerMins} دقیقه</div><small>زمان بازی روی دستگاه‌ها</small></div></div>
+    document.getElementById('custPageTitle').innerHTML = `<i class="fas fa-user-circle me-1"></i> آمار کامل مشتری: <strong>${escapeHtml(custName)}</strong>`;
+    document.getElementById('custDetailPageBody').innerHTML = `
+        <div class="card-modern mb-3">
+            <div class="row g-2 text-center">
+                <div class="col-4"><div class="stat-card p-2"><div class="fs-5 font-weight-bold text-primary">${settledOrders.length}</div><small>فاکتور تسویه شده</small></div></div>
+                <div class="col-4"><div class="stat-card p-2"><div class="fs-5 font-weight-bold text-success">${formatPrice(totalSpent)} ت</div><small>مجموع خرید</small></div></div>
+                <div class="col-4"><div class="stat-card p-2"><div class="fs-5 font-weight-bold text-warning">${totalTimerMins} دقیقه</div><small>بازی روی دستگاه‌ها</small></div></div>
+            </div>
         </div>
 
-        <h6 class="fw-bold text-dark border-bottom pb-2 mt-3"><i class="fas fa-utensils text-info me-1"></i> خلاصه خریدهای بوفه:</h6>
-        <div class="mb-3">${itemsSummaryHTML}</div>
-
-        <h6 class="fw-bold text-dark border-bottom pb-2 mt-3"><i class="fas fa-history text-primary me-1"></i> تاریخچه کامل سفارشات و بازی‌ها:</h6>
-        <div style="max-height:250px; overflow-y:auto;">${historyOrdersHTML}</div>
+        <div class="row g-3">
+            <div class="col-12 col-md-5">
+                <div class="card-modern h-100">
+                    <h6 class="fw-bold text-dark border-bottom pb-2 mb-3"><i class="fas fa-utensils text-info me-1"></i> خلاصه خریدهای بوفه:</h6>
+                    <div>${itemsSummaryHTML}</div>
+                </div>
+            </div>
+            <div class="col-12 col-md-7">
+                <div class="card-modern h-100">
+                    <h6 class="fw-bold text-dark border-bottom pb-2 mb-3"><i class="fas fa-history text-primary me-1"></i> تاریخچه کامل فاکتورها و بازی‌ها:</h6>
+                    <div>${historyOrdersHTML}</div>
+                </div>
+            </div>
+        </div>
     `;
 
-    new bootstrap.Modal(document.getElementById('customerDetailModal')).show();
+    showPage('customer-detail');
 };
 
 window.editCustomer = async function(oldName) {

@@ -117,6 +117,15 @@
             <div class="tab-pane" id="tab-settle">
                 <div class="card-modern">
                     <h6 class="fw-bold mb-3"><i class="fas fa-calculator text-primary me-1"></i> تسویه فاکتور و ریز محاسبات</h6>
+                    
+                    <!-- Settlement Date Filter -->
+                    <div class="quick-dates-container mb-3">
+                        <button class="quick-date-btn active" onclick="setSettleDate('today', this)">امروز</button>
+                        <button class="quick-date-btn" onclick="setSettleDate('3days', this)">۳ روز</button>
+                        <button class="quick-date-btn" onclick="setSettleDate('week', this)">هفته</button>
+                        <button class="quick-date-btn" onclick="setSettleDate('all', this)">کل تاریخچه</button>
+                    </div>
+
                     <input type="text" id="settleSearch" class="form-control mb-3" placeholder="جستجو بر اساس نام مشتری...">
                     <div id="pendingOrdersList"></div>
                 </div>
@@ -125,10 +134,13 @@
             <!-- History Tab -->
             <div class="tab-pane" id="tab-history">
                 <div class="card-modern">
-                    <ul class="nav nav-pills mb-3" id="historySubTabs">
-                        <li class="nav-item"><button class="nav-link active" data-tab="created"><i class="fas fa-user-edit me-1"></i> ثبت سفارش‌ها</button></li>
-                        <li class="nav-item"><button class="nav-link" data-tab="settled"><i class="fas fa-user-check me-1"></i> تسویه‌ها</button></li>
-                    </ul>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <ul class="nav nav-pills mb-0" id="historySubTabs">
+                            <li class="nav-item"><button class="nav-link active" data-tab="created"><i class="fas fa-user-edit me-1"></i> ثبت سفارش‌ها</button></li>
+                            <li class="nav-item"><button class="nav-link" data-tab="settled"><i class="fas fa-user-check me-1"></i> تسویه‌ها</button></li>
+                        </ul>
+                        <button class="btn btn-sm btn-outline-success" onclick="exportHistoryCSV()"><i class="fas fa-file-excel me-1"></i> خروجی CSV</button>
+                    </div>
 
                     <div id="historySubTabContent">
                         <!-- Created By Sub-Tab -->
@@ -191,7 +203,7 @@
                 </div>
             </div>
 
-            <!-- Categories Tab (With 2 Sub-Tabs: ثابت‌ها & تایمری‌ها) -->
+            <!-- Categories Tab -->
             <div class="tab-pane" id="mtab-cats">
                 <div class="card-modern">
                     <ul class="nav nav-pills mb-3" id="catSubTabs">
@@ -229,10 +241,10 @@
         <div class="card-modern">
             <div class="quick-dates-container mb-3">
                 <button class="quick-date-btn active" onclick="setRepDate('today', this)">امروز</button>
-                <button class="quick-date-btn" onclick="setRepDate('3days', this)">۳ روز گذشته</button>
-                <button class="quick-date-btn" onclick="setRepDate('week', this)">هفته گذشته</button>
-                <button class="quick-date-btn" onclick="setRepDate('month', this)">ماه گذشته</button>
-                <button class="quick-date-btn" onclick="setRepDate('all', this)">کل تاریخچه</button>
+                <button class="quick-date-btn" onclick="setRepDate('3days', this)">۳ روز</button>
+                <button class="quick-date-btn" onclick="setRepDate('week', this)">هفته</button>
+                <button class="quick-date-btn" onclick="setRepDate('month', this)">ماه</button>
+                <button class="quick-date-btn" onclick="setRepDate('all', this)">تاریخچه</button>
             </div>
             <div class="row g-2 mb-3 bg-light p-2 rounded">
                 <div class="col-12 col-md-5"><label class="form-label small text-muted mb-0">از تاریخ:</label><input type="date" id="reportDateFrom" class="form-control form-control-sm"></div>
@@ -241,9 +253,9 @@
             </div>
 
             <ul class="nav nav-pills mb-3" id="reportSubTabs">
-                <li class="nav-item"><button class="nav-link active" data-tab="sales"><i class="fas fa-chart-line me-1"></i> آمار فروش مالی</button></li>
-                <li class="nav-item"><button class="nav-link" data-tab="devices"><i class="fas fa-gamepad me-1"></i> عملکرد دستگاه‌ها</button></li>
-                <li class="nav-item"><button class="nav-link" data-tab="logs"><i class="fas fa-list-alt me-1"></i> لاگ سیستم (رویدادها)</button></li>
+                <li class="nav-item"><button class="nav-link active" data-tab="sales"><i class="fas fa-chart-line me-1"></i> آمار فروش</button></li>
+                <li class="nav-item"><button class="nav-link" data-tab="devices"><i class="fas fa-gamepad me-1"></i> دستگاه‌ها</button></li>
+                <li class="nav-item"><button class="nav-link" data-tab="logs"><i class="fas fa-list-alt me-1"></i> لاگ</button></li>
             </ul>
 
             <div id="reportActionBtns" class="d-flex gap-2 mb-3" style="display: none !important;">
@@ -281,6 +293,18 @@
             </div>
         </div>
     </div>
+
+    <!-- FULL PAGE: CUSTOMER STATS DETAIL -->
+    <div id="page-customer-detail" class="page">
+        <div class="card-modern mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold text-primary mb-0" id="custPageTitle"><i class="fas fa-user-circle me-1"></i> آمار کامل مشتری</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="showPage('system')"><i class="fas fa-arrow-right me-1"></i> بازگشت به سیستم</button>
+            </div>
+        </div>
+        <div id="custDetailPageBody"></div>
+    </div>
+
 </main>
 
 <nav class="bottom-nav" id="bottomNav">
@@ -317,21 +341,6 @@
             </div>
             <div class="modal-footer border-0 pt-0">
                 <button type="button" class="btn btn-primary-custom w-100" id="menuFormSave">ذخیره اطلاعات در سرور</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL: CUSTOMER FULL STATS DETAIL -->
-<div class="modal fade" id="customerDetailModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content rounded-4 border-0">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold text-primary" id="custModalTitle"><i class="fas fa-user-circle me-1"></i> آمار کامل مشتری</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="custModalBody">
-                <!-- Customer Stats Content Rendered via JS -->
             </div>
         </div>
     </div>
