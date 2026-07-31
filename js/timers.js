@@ -150,12 +150,20 @@ function getPlayerLiveCost(playerSession, deviceId) {
 // Attach finished timer session to customer's pending order in localOrders & Supabase
 async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
     let pendingOrder = localOrders.find(o => o.customer_name === customerName && o.status === 'معلق');
+    
+    const sDate = new Date(sessionData.start_time);
+    const eDate = new Date(sessionData.end_time);
+    const sTimeStr = sDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const eTimeStr = eDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
     const timerItem = {
         type: 'timer',
         name: `بازی ${sessionData.device_name}`,
         device_name: sessionData.device_name,
         start_time: sessionData.start_time,
         end_time: sessionData.end_time,
+        start_time_str: sTimeStr,
+        end_time_str: eTimeStr,
         duration_mins: sessionData.final_duration_mins,
         hourly_rate: sessionData.hourly_rate,
         price: sessionData.final_cost,
@@ -224,7 +232,7 @@ function startLiveTimerTicker() {
     }, 1000);
 }
 
-// UPDATE LIVE DEVICE CARDS IN UI
+// UPDATE LIVE DEVICE CARDS IN UI (WITH START TIME H:M:S)
 function updateLiveDeviceCardsUI() {
     const container = document.getElementById('liveDevicesContainer');
     if (!container) return;
@@ -253,9 +261,14 @@ function updateLiveDeviceCardsUI() {
                 const start = new Date(p.start_time);
                 const liveSeconds = Math.max(0, Math.floor((now - start) / 1000));
                 const liveCost = getPlayerLiveCost(p, device.id);
+                const startTimeHMS = start.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
                 return `
                     <div class="player-item">
-                        <div><span class="player-name">${escapeHtml(p.customer_name)}</span></div>
+                        <div>
+                            <span class="player-name">${escapeHtml(p.customer_name)}</span>
+                            <div class="small text-muted" style="font-size:0.75rem;"><i class="far fa-clock me-1"></i> شروع: ${startTimeHMS}</div>
+                        </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="player-timer">${formatDuration(liveSeconds)}</span>
                             <span class="player-cost">${formatPrice(liveCost)} ت</span>

@@ -1,4 +1,8 @@
-const CACHE_NAME = 'cafe-v4';
+// ==========================================
+// CAFE CLOVER - SERVICE WORKER (NETWORK FIRST STRATEGY)
+// ==========================================
+const CACHE_NAME = 'cafe-v5';
+
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -14,40 +18,61 @@ const STATIC_ASSETS = [
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'
 ];
 
-self.addEventListener('install', (e) => {
-    e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-    );
+// Install Event: Skip waiting immediately
+self.addEventListener('install', (event) => {
     self.skipWaiting();
-});
-
-self.addEventListener('activate', (e) => {
-    e.waitUntil(
-        caches.keys().then((keys) => Promise.all(
-            keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-        ))
+    event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => {
+            return cache.addAll(STATIC_ASSETS).catch(err => console.log('Cache addAll error:', err));
+        })
     );
-    self.clients.claim();
 });
 
-self.addEventListener('fetch', (e) => {
-    // Bypass non-GET requests and Supabase API calls
-    if (e.request.method !== 'GET' || e.request.url.includes('supabase.co')) {
+// Activate Event: Claim clients and purge old caches
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        Promise.all([
+            self.clients.claim(),
+            caches.keys().then((keys) => {
+                return Promise.all(
+                    keys.map((key) => {
+                        if (key !== CACHE_NAME) {
+                            return caches.delete(key);
+                        }
+                    })
+                );
+            })
+        ])
+    );
+});
+
+// Fetch Event: NETWORK-FIRST STRATEGY (First try Network, fallback to Cache if offline)
+self.addEventListener('fetch', (event) => {
+    // Only handle GET requests
+    if (event.request.method !== 'GET') return;
+
+    const url = new URL(event.request.url);
+
+    // Completely bypass cache for Supabase REST API & WebSocket requests
+    if (url.hostname.includes('supabase.co') || url.protocol === 'wss:') {
         return;
     }
 
-    e.respondWith(
-        caches.match(e.request).then((cachedResponse) => {
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-            return fetch(e.request).then((response) => {
-                if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+    event.respondWith(
+        fetch(event.request)
+            .then((networkResponse) => {
+                // If valid response from network, update cache in background
+                if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, responseToCache);
+                    });
                 }
-                return response;
-            });
-        })
+                return networkResponse;
+            })
+            .catch(() => {
+                // Network failed or offline -> Fallback to Cache
+                return caches.match(event.request);
+            })
     );
 });

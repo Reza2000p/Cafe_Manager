@@ -707,7 +707,7 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
     }
 });
 
-// 7. SETTLEMENT TAB (INSTANT REFRESH ON ACTION)
+// 7. SETTLEMENT TAB (INSTANT REFRESH ON ACTION WITH START & END TIME)
 document.getElementById('settleSearch').addEventListener('input', renderSettlement);
 
 function renderSettlement() {
@@ -735,12 +735,21 @@ function renderSettlement() {
         const timerItems = g.items.filter(i => i.type === 'timer' || i.hourly_rate);
         const staticItems = g.items.filter(i => i.type !== 'timer' && !i.hourly_rate);
 
-        let timerRows = timerItems.map(t => `
-            <div class="invoice-item-row">
-                <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)} (${t.duration_mins || 0} دقیقه)</span>
-                <span class="fw-bold">${formatPrice(t.price)} تومان</span>
-            </div>
-        `).join('');
+        let timerRows = timerItems.map(t => {
+            let timeRange = '';
+            const sTime = t.start_time_str || (t.start_time ? new Date(t.start_time).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '');
+            const eTime = t.end_time_str || (t.end_time ? new Date(t.end_time).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '');
+            if (sTime && eTime) {
+                timeRange = ` (از ${sTime} تا ${eTime})`;
+            }
+
+            return `
+                <div class="invoice-item-row">
+                    <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه</span>
+                    <span class="fw-bold">${formatPrice(t.price)} تومان</span>
+                </div>
+            `;
+        }).join('');
 
         let staticRows = staticItems.map(s => `
             <div class="invoice-item-row">
