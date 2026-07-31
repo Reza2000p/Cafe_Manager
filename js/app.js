@@ -2,6 +2,15 @@
 // CAFE CLOVER - APPLICATION LOGIC (APP.JS)
 // ==========================================
 
+// AUTO SERVICE WORKER REGISTRATION & FORCE UPDATE CHECK
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js?v=20260731_v6').then(reg => {
+            reg.update(); // Force check for SW update on every load
+        }).catch(err => console.log('SW registration error:', err));
+    });
+}
+
 // CUSTOM BOOTSTRAP MODALS (REPLACING BROWSER CONFIRM & PROMPT)
 function showConfirmModal(title, text) {
     return new Promise((resolve) => {
@@ -190,7 +199,7 @@ async function silentRefreshData() {
     }
 }
 
-// BROADCAST SIGNAL TO ALL CONNECTED CLIENTS
+// BROADCAST SIGNAL TO ALL CONNECTED CLIENTS (INSTANT SYNC)
 function broadcastGlobalSync() {
     if (supa) {
         try {
@@ -219,10 +228,12 @@ function initRealtime() {
 
     channel.subscribe();
 
-    // 3. Fallback Polling (Every 3 Seconds) for 100% Reliability on Shaky Mobile Networks
+    // 3. Smart Polling (Every 10 Seconds ONLY IF TAB IS VISIBLE -> Saves 90%+ DB & Bandwidth Quota)
     setInterval(async () => {
-        await silentRefreshData();
-    }, 3000);
+        if (!document.hidden && currentUser) {
+            await silentRefreshData();
+        }
+    }, 10000);
 }
 
 async function refreshOrders() {
