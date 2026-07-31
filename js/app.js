@@ -287,7 +287,7 @@ function renderDashboard() {
     document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 }
 
-// 5. MENU & CATEGORIES MANAGEMENT (WITH EDIT & SUPABASE FALLBACK)
+// 5. MENU & CATEGORIES MANAGEMENT (CLEAN INSERT WITHOUT SCHEMA ERRORS)
 function populateCatSelects() {
     let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     document.getElementById('menuFormCat').innerHTML = opts;
@@ -405,8 +405,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
 });
 
 function renderCats() {
-    const staticCats = localCats.filter(c => c.type !== 'timer');
-    const timerCats = localCats.filter(c => c.type === 'timer');
+    const staticCats = localCats.filter(c => c.is_timer !== true);
+    const timerCats = localCats.filter(c => c.is_timer === true);
 
     document.getElementById('catStaticList').innerHTML = staticCats.length ? staticCats.map(c => `
         <li class="list-group-item d-flex justify-content-between align-items-center p-2">
@@ -429,17 +429,13 @@ function renderCats() {
     `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی تایمری وجود ندارد</li>';
 }
 
-// RESILIENT CATEGORY ADDITION WITH SCHEMA FALLBACK
+// SAFE CATEGORY INSERTION (ONLY SEND { name })
 document.getElementById('addCatStaticBtn').addEventListener('click', async () => {
     const name = document.getElementById('newCatStaticName').value.trim();
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        let { error } = await supa.from('categories').insert([{ name, type: 'static' }]);
-        if (error && (error.code === 'PGRST204' || error.message.includes("type"))) {
-            // Schema fallback if type column does not exist in Supabase DB
-            ({ error } = await supa.from('categories').insert([{ name }]));
-        }
+        const { error } = await supa.from('categories').insert([{ name }]);
         if (error) throw error;
         document.getElementById('newCatStaticName').value = '';
         toast('دسته‌بندی ثابت‌ها افزوده شد');
@@ -453,10 +449,7 @@ document.getElementById('addCatTimerBtn').addEventListener('click', async () => 
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        let { error } = await supa.from('categories').insert([{ name, type: 'timer' }]);
-        if (error && (error.code === 'PGRST204' || error.message.includes("type"))) {
-            ({ error } = await supa.from('categories').insert([{ name }]));
-        }
+        const { error } = await supa.from('categories').insert([{ name }]);
         if (error) throw error;
         document.getElementById('newCatTimerName').value = '';
         toast('دسته‌بندی تایمری‌ها افزوده شد');
@@ -676,41 +669,18 @@ window.transferPlayerClick = function(fromDeviceId) {
     }
 };
 
-// 7. SETTLEMENT WITH DATE FILTERS & CLEANED CARD BUTTONS
-let currentSettleFilterMode = 'today';
-
-window.setSettleDate = function(mode, btnEl) {
-    if (btnEl) {
-        document.querySelectorAll('#tab-settle .quick-date-btn').forEach(b => b.classList.remove('active'));
-        btnEl.classList.add('active');
-    }
-    currentSettleFilterMode = mode;
-    renderSettlement();
-};
-
+// 7. SETTLEMENT TAB (REVERTED TO STANDARD PENDING CARDS WITHOUT REGISTERED BY LINE)
 document.getElementById('settleSearch').addEventListener('input', renderSettlement);
 
 function renderSettlement() {
     const sq = document.getElementById('settleSearch').value.trim().toLowerCase();
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
     let pending = localOrders.filter(o => o.status === 'معلق');
-
-    if (currentSettleFilterMode === 'today') {
-        pending = pending.filter(o => new Date(o.created_at) >= startOfToday);
-    } else if (currentSettleFilterMode === '3days' || currentSettleFilterMode === 'week') {
-        const limitDate = new Date(startOfToday);
-        limitDate.setDate(limitDate.getDate() - (currentSettleFilterMode === '3days' ? 2 : 6));
-        pending = pending.filter(o => new Date(o.created_at) >= limitDate);
-    }
-
     if (sq) pending = pending.filter(o => (o.customer_name || '').toLowerCase().includes(sq));
 
     const groups = {};
     pending.forEach(o => {
         const c = o.customer_name || 'بدون نام';
-        if (!groups[c]) groups[c] = { ids: [], total: 0, items: [], createdBy: o.created_by };
+        if (!groups[c]) groups[c] = { ids: [], total: 0, items: [] };
         groups[c].ids.push(o.id);
         groups[c].total += (o.total || 0);
         (o.items || []).forEach(it => groups[c].items.push(it));
@@ -746,11 +716,10 @@ function renderSettlement() {
                 <div class="invoice-header">
                     <div>
                         <strong class="fs-5 text-dark"><i class="fas fa-user-circle text-primary me-1"></i> ${escapeHtml(custName)}</strong>
-                        <div class="small text-muted mt-1">ثبت‌کننده: ${escapeHtml(g.createdBy)}</div>
                     </div>
                     <div class="text-end">
                         <div class="fs-5 fw-bold text-success">${formatPrice(g.total)} تومان</div>
-                        <small class="text-muted">${g.ids.length} فاکتور</small>
+                        <small class="text-muted">${g.ids.length} فاکتور معلق</small>
                     </div>
                 </div>
 
@@ -764,8 +733,8 @@ function renderSettlement() {
                 </div>
 
                 <div class="d-flex gap-2">
-                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> نقدی</button>
-                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> کارتخوان</button>
+                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> تسویه نقدی</button>
+                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> تسویه کارتخوان</button>
                     <button class="btn btn-outline-danger" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i> لغو</button>
                 </div>
             </div>
@@ -794,7 +763,7 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
     }
 };
 
-// 8. HISTORY (WITH CSV EXPORT FUNCTION)
+// 8. HISTORY (WITH UPDATED DROPDOWN FILTERS FOR TODAY, 3DAYS, WEEK, ALL)
 window.exportHistoryCSV = function() {
     if (!localOrders || !localOrders.length) {
         toast('تاریخچه‌ای برای دانلود وجود ندارد', 'warning');
@@ -833,7 +802,14 @@ function renderHistory() {
         let filtered = localOrders.filter(o => o.status !== 'معلق');
         if (payF) filtered = filtered.filter(o => o.status === payF);
         if (userF) filtered = filtered.filter(o => o.created_by === userF);
-        if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+
+        if (dateF === 'today') {
+            filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+        } else if (dateF === '3days' || dateF === 'week') {
+            const limitDate = new Date(startOfToday);
+            limitDate.setDate(limitDate.getDate() - (dateF === '3days' ? 2 : 6));
+            filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
+        }
 
         document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => {
             const d = new Date(o.created_at);
@@ -845,7 +821,7 @@ function renderHistory() {
                         <span class="text-primary fw-bold">${formatPrice(o.total)} تومان</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center">
-                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${dateStr} | <i class="fas fa-user-edit me-1"></i> ثبت کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
+                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${dateStr} | <i class="fas fa-user-edit me-1"></i> ثبت‌کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
                         <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
                     </div>
                 </div>
@@ -861,7 +837,14 @@ function renderHistory() {
         let filtered = localOrders.filter(o => o.status !== 'معلق');
         if (payF) filtered = filtered.filter(o => o.status === payF);
         if (userF) filtered = filtered.filter(o => o.settled_by === userF);
-        if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+
+        if (dateF === 'today') {
+            filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+        } else if (dateF === '3days' || dateF === 'week') {
+            const limitDate = new Date(startOfToday);
+            limitDate.setDate(limitDate.getDate() - (dateF === '3days' ? 2 : 6));
+            filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
+        }
 
         document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => {
             const d = new Date(o.created_at);
@@ -1127,7 +1110,7 @@ window.viewCustomerStats = function(custName) {
         return `
             <div class="border-bottom py-2 small">
                 <div class="d-flex justify-content-between mb-1">
-                    <span class="fw-bold">#${o.id} - ${dateStr}</span>
+                    <span>#${o.id} - ${dateStr}</span>
                     <span class="fw-bold text-success">${formatPrice(o.total)} تومان</span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center">

@@ -20,7 +20,6 @@ let localCustomers = [];  // Customers list
 let localLogs = [];       // System action logs
 
 // Timer Device Active Sessions (stored in memory & sync with localStorage)
-// Structure: { device_id: [ { id, customer_name, start_time, hourly_rate } ] }
 let deviceSessions = {}; 
 
 try {
@@ -73,7 +72,7 @@ async function logSystemAction(action, details = '') {
         try {
             await supa.from('system_logs').insert([logObj]);
         } catch(e) {
-            console.warn('System log insert ignored:', e);
+            // Silently ignore if system_logs table has RLS policy or missing column
         }
     }
 }
