@@ -1,34 +1,78 @@
 // ==========================================
-// TIMER & DEVICE LOGIC ENGINE (ACCURATE BILLING)
+// TIMER & DEVICE LOGIC ENGINE (SEGMENT-BASED ACCURATE SPLIT BILLING)
 // ==========================================
+
+// Helper: Get exact hourly rate of a device from menu
+function getDeviceHourlyRate(device) {
+    if (!device) return 0;
+    const hRate = Number(device.hourly_rate);
+    if (!isNaN(hRate) && hRate > 0) return hRate;
+    const pRate = Number(device.price);
+    if (!isNaN(pRate) && pRate > 0) return pRate;
+    return 0;
+}
+
+// Helper: Update accumulated costs of all active players on a device before changing player count
+function updateDeviceActivePlayersSegments(deviceId) {
+    if (!deviceSessions[deviceId] || !deviceSessions[deviceId].length) return;
+    const activePlayers = deviceSessions[deviceId].filter(p => !p.end_time);
+    const playerCount = activePlayers.length;
+    if (playerCount === 0) return;
+
+    const now = new Date();
+    activePlayers.forEach(p => {
+        const segStart = new Date(p.current_segment_start || p.start_time);
+        const elapsedSecs = Math.max(0, (now - segStart) / 1000);
+        if (elapsedSecs > 0) {
+            const segHours = elapsedSecs / 3600;
+            const segTotalCost = (segHours * (p.hourly_rate || 0)) / playerCount;
+            p.accumulated_cost = (p.accumulated_cost || 0) + segTotalCost;
+            p.accumulated_seconds = (p.accumulated_seconds || 0) + elapsedSecs;
+        }
+        p.current_segment_start = now.toISOString();
+    });
+}
 
 // Add a player to a timer device
 function startDevicePlayer(deviceId, customerName) {
     if (!deviceId || !customerName) return false;
     const device = localMenu.find(m => m.id === deviceId && m.is_timer);
-    if (!device) return false;
+    if (!device) {
+        toast('دستگاه یافت نشد', 'danger');
+        return false;
+    }
+
+    const rate = getDeviceHourlyRate(device);
+    if (rate <= 0) {
+        toast('نرخ این دستگاه در منو صفر ثبت شده است! لطفا از بخش منو نرخ ساعتی را ویرایش کنید.', 'danger');
+        return false;
+    }
 
     if (!deviceSessions[deviceId]) {
         deviceSessions[deviceId] = [];
     }
 
-    // Check if player is already on this device
+    // Check if player is already active on this device
     const existing = deviceSessions[deviceId].find(p => p.customer_name === customerName && !p.end_time);
     if (existing) {
         toast('این بازیکن در حال حاضر روی این دستگاه فعال است', 'warning');
         return false;
     }
 
-    const now = new Date().toISOString();
-    const rate = Number(device.hourly_rate || device.price || 0);
+    // UPDATE EXISITING PLAYERS' ACCUMULATED SEGMENTS BEFORE N INCREASES
+    updateDeviceActivePlayersSegments(deviceId);
 
+    const nowIso = new Date().toISOString();
     deviceSessions[deviceId].push({
         id: Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         device_id: deviceId,
         device_name: device.name,
         customer_name: customerName,
         hourly_rate: rate,
-        start_time: now,
+        start_time: nowIso,
+        current_segment_start: nowIso,
+        accumulated_cost: 0,
+        accumulated_seconds: 0,
         end_time: null
     });
 
@@ -43,16 +87,19 @@ function stopDevicePlayer(deviceId, customerName) {
     const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
     if (playerIndex === -1) return null;
 
-    const playerSession = deviceSessions[deviceId][playerIndex];
-    const now = new Date().toISOString();
-    playerSession.end_time = now;
+    // UPDATE ALL PLAYERS' ACCUMULATED SEGMENTS BEFORE N DECREASES
+    updateDeviceActivePlayersSegments(deviceId);
 
-    // Calculate final segment and total cost for this session
-    const activeCount = getActivePlayerCountOnDevice(deviceId); // count before removal
-    const segmentCost = calculateSegmentCost(playerSession.start_time, now, playerSession.hourly_rate, activeCount);
-    
-    playerSession.final_cost = Math.round(segmentCost);
-    const durationMins = Math.max(1, Math.ceil((new Date(now) - new Date(playerSession.start_time)) / 60000));
+    const playerSession = deviceSessions[deviceId][playerIndex];
+    const nowIso = new Date().toISOString();
+    playerSession.end_time = nowIso;
+
+    // Final cost and duration calculation
+    const finalCost = Math.round(playerSession.accumulated_cost || 0);
+    const totalSecs = playerSession.accumulated_seconds || 0;
+    const durationMins = Math.max(1, Math.round(totalSecs / 60));
+
+    playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
 
     // Remove from active list
@@ -62,7 +109,7 @@ function stopDevicePlayer(deviceId, customerName) {
     // Attach completed timer session to customer's pending order
     attachTimerSessionToCustomerOrder(customerName, playerSession);
 
-    logSystemAction('پایان بازی', `پایان بازی ${customerName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(playerSession.final_cost)} تومان)`);
+    logSystemAction('پایان بازی', `پایان بازی ${customerName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(finalCost)} تومان)`);
     return playerSession;
 }
 
@@ -72,22 +119,16 @@ function getActivePlayerCountOnDevice(deviceId) {
     return deviceSessions[deviceId].filter(p => !p.end_time).length;
 }
 
-// Calculate cost of a time segment (Accurate to exact second)
-function calculateSegmentCost(startTimeIso, endTimeIso, hourlyRate, playerCount) {
-    if (!startTimeIso || !hourlyRate || !playerCount || playerCount <= 0) return 0;
-    const end = endTimeIso ? new Date(endTimeIso) : new Date();
-    const start = new Date(startTimeIso);
-    const durationSeconds = Math.max(1, Math.floor((end - start) / 1000));
-    const durationHours = durationSeconds / 3600;
-    const totalDeviceCost = durationHours * hourlyRate;
-    return totalDeviceCost / playerCount;
-}
-
-// Calculate player's live running cost on an active device
+// Calculate live cost for an active player
 function getPlayerLiveCost(playerSession, deviceId) {
-    const playerCount = Math.max(1, getActivePlayerCountOnDevice(deviceId));
-    const nowIso = new Date().toISOString();
-    return Math.round(calculateSegmentCost(playerSession.start_time, nowIso, playerSession.hourly_rate, playerCount));
+    if (!playerSession) return 0;
+    const activeCount = Math.max(1, getActivePlayerCountOnDevice(deviceId));
+    const now = new Date();
+    const segStart = new Date(playerSession.current_segment_start || playerSession.start_time);
+    const elapsedSecs = Math.max(0, (now - segStart) / 1000);
+    const currentSegHours = elapsedSecs / 3600;
+    const currentSegCost = (currentSegHours * (playerSession.hourly_rate || 0)) / activeCount;
+    return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
 }
 
 // Attach finished timer session to customer's pending order in localOrders / Supabase
@@ -165,7 +206,7 @@ function startLiveTimerTicker() {
     }, 1000);
 }
 
-// UPDATE LIVE DEVICE CARDS IN UI (WITH SEARCH & CATEGORY FILTERING)
+// UPDATE LIVE DEVICE CARDS IN UI
 function updateLiveDeviceCardsUI() {
     const container = document.getElementById('liveDevicesContainer');
     if (!container) return;
@@ -185,12 +226,14 @@ function updateLiveDeviceCardsUI() {
     container.innerHTML = timerDevices.map(device => {
         const players = deviceSessions[device.id] || [];
         const isActive = players.length > 0;
-        const rate = device.hourly_rate || device.price || 0;
+        const rate = getDeviceHourlyRate(device);
 
         let playersHTML = '';
         if (isActive) {
             playersHTML = players.map(p => {
-                const liveSeconds = Math.max(0, Math.floor((new Date() - new Date(p.start_time)) / 1000));
+                const now = new Date();
+                const start = new Date(p.start_time);
+                const liveSeconds = Math.max(0, Math.floor((now - start) / 1000));
                 const liveCost = getPlayerLiveCost(p, device.id);
                 return `
                     <div class="player-item">

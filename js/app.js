@@ -178,6 +178,7 @@ async function refreshMenu() {
         const { data } = await supa.from('menu_items').select('*');
         localMenu = data || [];
         if (document.getElementById('page-menu').classList.contains('active')) renderMenu();
+        if (document.getElementById('page-orders').classList.contains('active')) updateLiveDeviceCardsUI();
     } catch (err) { console.error('Refresh menu error:', err); }
 }
 
@@ -208,7 +209,6 @@ function populateFilters() {
     });
 }
 
-// Populate Category selects based on tab type (Static vs Timer)
 function populateCatSelects(forTimer = false) {
     const staticCats = localCats.filter(c => c.is_timer !== true && c.type !== 'timer');
     const timerCats = localCats.filter(c => c.is_timer === true || c.type === 'timer');
@@ -280,7 +280,6 @@ setupTabs('historySubTabs', 'historySubTabContent', (tab) => { renderHistory(); 
 setupTabs('catSubTabs', 'catSubTabContent', (tab) => { renderCats(); });
 setupTabs('reportSubTabs', 'reportSubTabContent', (tab) => { renderReports(); });
 
-// Search & Filter event listeners for Timer Devices Tab
 document.addEventListener('DOMContentLoaded', () => {
     const tSearch = document.getElementById('timerDeviceSearch');
     const tCat = document.getElementById('timerDeviceCatFilter');
@@ -392,7 +391,7 @@ document.getElementById('menuSearch').addEventListener('input', renderMenu);
 document.getElementById('menuCatFilter').addEventListener('change', renderMenu);
 
 document.getElementById('addStaticItemBtn').addEventListener('click', () => {
-    populateCatSelects(false); // Static categories only
+    populateCatSelects(false);
     document.getElementById('menuFormId').value = '';
     document.getElementById('menuFormIsTimer').value = 'false';
     document.getElementById('menuModalTitle').textContent = 'افزودن آیتم ثابت (بوفه)';
@@ -403,7 +402,7 @@ document.getElementById('addStaticItemBtn').addEventListener('click', () => {
 });
 
 document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
-    populateCatSelects(true); // Timer categories only
+    populateCatSelects(true);
     document.getElementById('menuFormId').value = '';
     document.getElementById('menuFormIsTimer').value = 'true';
     document.getElementById('menuModalTitle').textContent = 'افزودن دستگاه تایمری جدید';
@@ -440,6 +439,8 @@ window.deleteMenu = async function(id) {
         logSystemAction('حذف منو/دستگاه', `حذف ${item ? item.name : id}`);
         await loadInitialData();
         renderMenu();
+        updateLiveDeviceCardsUI();
+        renderDashboard();
     } catch (err) {
         console.error('Delete menu error:', err);
         toast('خطا در حذف', 'danger');
@@ -475,6 +476,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
         bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
         await loadInitialData();
         renderMenu();
+        updateLiveDeviceCardsUI();
+        renderDashboard();
     } catch (err) {
         console.error('Save menu error:', err);
         toast('خطا در ذخیره‌سازی', 'danger');
@@ -1181,7 +1184,7 @@ window.editCustomer = async function(oldName) {
         if (err2) throw err2;
 
         toast('مشخصات مشتری با موفقیت ویرایش شد');
-        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${newName}`);
+        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${cleanNewName}`);
         await loadInitialData();
         renderCustomersList();
     } catch (err) {
