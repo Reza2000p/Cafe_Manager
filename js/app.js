@@ -1,0 +1,1003 @@
+// ==========================================
+// CAFE CLOVER - APPLICATION LOGIC (APP.JS)
+// ==========================================
+
+// 1. INITIALIZATION & AUTH
+async function initApp() {
+    uiLoading(true);
+    try {
+        if (!supa) {
+            showPage('login');
+            uiLoading(false);
+            return;
+        }
+        const { data: { session }, error } = await supa.auth.getSession();
+        if (error) throw error;
+
+        if (session) {
+            currentUser = session.user;
+            await loadInitialData();
+            document.getElementById('logoutBtn').style.display = 'inline';
+            showPage('dashboard');
+            initRealtime();
+            startLiveTimerTicker();
+        } else {
+            showPage('login');
+        }
+    } catch (err) {
+        console.error('Init app error:', err);
+        toast('خطا در برقراری ارتباط با سرور', 'danger');
+        showPage('login');
+    } finally {
+        uiLoading(false);
+    }
+
+    supa.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+            currentUser = null;
+            userProfile = null;
+            document.getElementById('logoutBtn').style.display = 'none';
+            showPage('login');
+        }
+    });
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    uiLoading(true);
+    try {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value.trim();
+        const { data, error } = await supa.auth.signInWithPassword({ email, password });
+        if (error) {
+            toast('ایمیل یا رمز عبور اشتباه است', 'danger');
+        } else {
+            currentUser = data.user;
+            await loadInitialData();
+            document.getElementById('logoutBtn').style.display = 'inline';
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+            toast('با موفقیت وارد شدید');
+            logSystemAction('ورود به سیستم', `ورود کاربر ${currentUser.email}`);
+            showPage('dashboard');
+            initRealtime();
+            startLiveTimerTicker();
+        }
+    } catch (err) {
+        console.error('Login error:', err);
+        toast('خطا در ورود به سیستم', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    logSystemAction('خروج از سیستم', `خروج کاربر ${currentUser ? currentUser.email : ''}`);
+    await supa.auth.signOut();
+});
+
+// 2. DATA LOADING & REALTIME
+async function loadInitialData() {
+    try {
+        const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
+        userProfile = prof || { full_name: currentUser.email, role: 'staff' };
+        document.getElementById('currentUser').textContent = userProfile.full_name || currentUser.email;
+
+        const [menuRes, catsRes, ordersRes, profilesRes, custRes, logsRes] = await Promise.all([
+            supa.from('menu_items').select('*'),
+            supa.from('categories').select('*'),
+            supa.from('orders').select('*').order('created_at', { ascending: false }),
+            supa.from('profiles').select('*'),
+            supa.from('customers').select('*').order('created_at', { ascending: false }),
+            supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100)
+        ]);
+
+        localMenu = menuRes.data || [];
+        localCats = catsRes.data || [];
+        localOrders = ordersRes.data || [];
+        localProfiles = profilesRes.data || [];
+        localCustomers = custRes.data || [];
+        localLogs = logsRes.data || [];
+
+        populateFilters();
+    } catch (err) {
+        console.error('Load initial data error:', err);
+        toast('خطا در دریافت اطلاعات اولیه', 'danger');
+    }
+}
+
+function initRealtime() {
+    if (!supa) return;
+    supa.channel('public-tables')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => { refreshOrders(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, payload => { refreshMenu(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => { refreshCats(); })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, payload => { refreshCustomers(); })
+        .subscribe();
+}
+
+async function refreshOrders() {
+    try {
+        const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false });
+        localOrders = data || [];
+        if (document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
+        if (document.getElementById('page-orders').classList.contains('active')) { renderOrdersTab(); renderHistory(); }
+        if (document.getElementById('page-system').classList.contains('active')) renderCustomersList();
+    } catch (err) { console.error('Refresh orders error:', err); }
+}
+
+async function refreshMenu() {
+    try {
+        const { data } = await supa.from('menu_items').select('*');
+        localMenu = data || [];
+        if (document.getElementById('page-menu').classList.contains('active')) renderMenu();
+    } catch (err) { console.error('Refresh menu error:', err); }
+}
+
+async function refreshCats() {
+    try {
+        const { data } = await supa.from('categories').select('*');
+        localCats = data || [];
+        populateCatSelects();
+        if (document.getElementById('page-menu').classList.contains('active')) renderCats();
+    } catch (err) { console.error('Refresh cats error:', err); }
+}
+
+async function refreshCustomers() {
+    try {
+        const { data } = await supa.from('customers').select('*').order('created_at', { ascending: false });
+        localCustomers = data || [];
+        if (document.getElementById('page-system').classList.contains('active')) renderCustomersList();
+    } catch (err) { console.error('Refresh customers error:', err); }
+}
+
+function populateFilters() {
+    const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
+    const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+    
+    ['histCreatedUserFilter', 'histSettledUserFilter', 'reportUserFilter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = opts;
+    });
+}
+
+// 3. NAVIGATION & TABS
+function showPage(page) {
+    if (!currentUser && page !== 'login') return;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const targetPage = document.getElementById(`page-${page}`);
+    if (targetPage) targetPage.classList.add('active');
+
+    document.querySelectorAll('.bottom-nav .nav-item, .desktop-nav .nav-item').forEach(b => {
+        b.classList.toggle('active', b.dataset.page === page);
+    });
+
+    if (page !== 'login') {
+        if (page === 'dashboard') renderDashboard();
+        if (page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
+        if (page === 'orders') { renderOrdersTab(); }
+        if (page === 'reports') { renderReports(); }
+        if (page === 'system') { renderUsers(); renderCustomersList(); }
+    }
+}
+
+document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', function() {
+        if (this.dataset.page) showPage(this.dataset.page);
+    });
+});
+
+function setupTabs(navId, contentId, callback) {
+    document.querySelectorAll(`#${navId} .nav-link`).forEach(tab => {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll(`#${navId} .nav-link`).forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll(`#${contentId} > .tab-pane`).forEach(p => p.classList.remove('active'));
+            const target = document.querySelector(`#${contentId} > [id$="${this.dataset.tab}"]`);
+            if (target) target.classList.add('active');
+            if (callback) callback(this.dataset.tab);
+        });
+    });
+}
+
+setupTabs('orderTabs', 'orderTabContent', (tab) => {
+    if (tab === 'settle') renderSettlement();
+    if (tab === 'history') renderHistory();
+    if (tab === 'timers') updateLiveDeviceCardsUI();
+});
+setupTabs('menuTabs', 'menuTabContent', null);
+setupTabs('systemTabs', 'systemTabContent', null);
+setupTabs('historySubTabs', 'historySubTabContent', (tab) => { renderHistory(); });
+setupTabs('reportSubTabs', 'reportSubTabContent', (tab) => { renderReports(); });
+
+// 4. DASHBOARD
+document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
+
+function renderDashboard() {
+    const timeFilter = document.getElementById('dashTimeFilter').value;
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    let targetOrders = localOrders.filter(o => o.status !== 'لغو');
+
+    if (timeFilter === 'today') targetOrders = targetOrders.filter(o => new Date(o.created_at) >= startOfToday);
+    else if (timeFilter === 'week' || timeFilter === 'month') {
+        const limitDate = new Date(startOfToday);
+        limitDate.setDate(limitDate.getDate() - (timeFilter === 'week' ? 7 : 30) + 1);
+        targetOrders = targetOrders.filter(o => new Date(o.created_at) >= limitDate);
+    }
+
+    const settledOrders = targetOrders.filter(o => o.status !== 'معلق');
+    const totalSales = settledOrders.reduce((s, o) => s + (o.total || 0), 0);
+
+    // Revenue breakdown: Static vs Timer Devices
+    let staticRevenue = 0;
+    let timerRevenue = 0;
+    let totalItemsCount = 0;
+
+    settledOrders.forEach(o => {
+        (o.items || []).forEach(i => {
+            if (i.type === 'timer' || i.hourly_rate) {
+                timerRevenue += (i.price || 0);
+            } else {
+                staticRevenue += (i.price || 0) * (i.qty || 1);
+                totalItemsCount += (i.qty || 1);
+            }
+        });
+    });
+
+    const avgTicket = settledOrders.length ? Math.round(totalSales / settledOrders.length) : 0;
+
+    document.getElementById('dashboardStats').innerHTML = `
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-primary text-white"><i class="fas fa-receipt"></i></div><h5>${settledOrders.length}</h5><small>فاکتور تسویه شده</small></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-success text-white"><i class="fas fa-wallet"></i></div><h5>${formatPrice(totalSales)}</h5><small>درآمد کل (تومان)</small></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-info text-white"><i class="fas fa-coffee"></i></div><h5>${formatPrice(staticRevenue)}</h5><small>درآمد ثابت‌ها (بوفه)</small></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-warning text-dark"><i class="fas fa-gamepad"></i></div><h5>${formatPrice(timerRevenue)}</h5><small>درآمد تایمری‌ها (دستگاه)</small></div></div>
+    `;
+
+    // Top Items (Static)
+    const itemMap = {};
+    settledOrders.forEach(o => {
+        (o.items || []).forEach(i => {
+            if (i.type !== 'timer') itemMap[i.name] = (itemMap[i.name] || 0) + (i.qty || 1);
+        });
+    });
+    const topItems = Object.entries(itemMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+
+    // Top Customers
+    const custMap = {};
+    settledOrders.forEach(o => { if (o.customer_name) custMap[o.customer_name] = (custMap[o.customer_name] || 0) + (o.total || 0); });
+    const topCust = Object.entries(custMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+
+    // Recent Orders
+    const recent = settledOrders.slice(0, 5);
+    document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+}
+
+// 5. MENU & TIMER DEVICES MANAGEMENT
+function populateCatSelects() {
+    let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    document.getElementById('menuFormCat').innerHTML = opts;
+    document.getElementById('menuCatFilter').innerHTML = `<option value="">همه دسته‌ها</option>` + opts;
+}
+
+function renderMenu() {
+    const q = document.getElementById('menuSearch').value.trim().toLowerCase();
+    const c = document.getElementById('menuCatFilter').value;
+
+    const staticItems = localMenu.filter(it => !it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
+    const timerDevices = localMenu.filter(it => it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
+
+    // Render Static Items Tab
+    document.getElementById('staticMenuList').innerHTML = staticItems.length ? staticItems.map(it => `
+        <div class="d-flex justify-content-between align-items-center border-bottom py-3">
+            <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
+            <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
+        </div>
+    `).join('') : '<div class="empty-state">آیتم ثابتی یافت نشد</div>';
+
+    // Render Timer Devices Tab
+    document.getElementById('timerMenuList').innerHTML = timerDevices.length ? timerDevices.map(it => `
+        <div class="d-flex justify-content-between align-items-center border-bottom py-3">
+            <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-success fw-bold mt-1">نرخ هر ساعت: ${formatPrice(it.hourly_rate || it.price)} تومان</div></div>
+            <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
+        </div>
+    `).join('') : '<div class="empty-state">دستگاه تایمری یافت نشد</div>';
+}
+
+document.getElementById('menuSearch').addEventListener('input', renderMenu);
+document.getElementById('menuCatFilter').addEventListener('change', renderMenu);
+
+document.getElementById('addStaticItemBtn').addEventListener('click', () => {
+    document.getElementById('menuFormId').value = '';
+    document.getElementById('menuFormIsTimer').value = 'false';
+    document.getElementById('menuModalTitle').textContent = 'افزودن آیتم ثابت (بوفه)';
+    document.getElementById('priceLabel').textContent = 'قیمت ثابت (تومان)';
+    document.getElementById('menuFormName').value = '';
+    document.getElementById('menuFormPrice').value = '';
+    new bootstrap.Modal(document.getElementById('menuModal')).show();
+});
+
+document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
+    document.getElementById('menuFormId').value = '';
+    document.getElementById('menuFormIsTimer').value = 'true';
+    document.getElementById('menuModalTitle').textContent = 'افزودن دستگاه تایمری جدید';
+    document.getElementById('priceLabel').textContent = 'نرخ هر ۱ ساعت (تومان)';
+    document.getElementById('menuFormName').value = '';
+    document.getElementById('menuFormPrice').value = '';
+    new bootstrap.Modal(document.getElementById('menuModal')).show();
+});
+
+window.editMenu = function(id) {
+    const item = localMenu.find(i => i.id === id);
+    if (!item) return;
+    document.getElementById('menuFormId').value = id;
+    document.getElementById('menuFormIsTimer').value = item.is_timer ? 'true' : 'false';
+    document.getElementById('menuModalTitle').textContent = item.is_timer ? 'ویرایش دستگاه تایمری' : 'ویرایش آیتم ثابت';
+    document.getElementById('priceLabel').textContent = item.is_timer ? 'نرخ هر ۱ ساعت (تومان)' : 'قیمت ثابت (تومان)';
+    document.getElementById('menuFormName').value = item.name;
+    document.getElementById('menuFormPrice').value = item.is_timer ? (item.hourly_rate || item.price) : item.price;
+    document.getElementById('menuFormCat').value = item.cat || '';
+    new bootstrap.Modal(document.getElementById('menuModal')).show();
+};
+
+window.deleteMenu = async function(id) {
+    if (!confirm('حذف شود؟')) return;
+    uiLoading(true);
+    try {
+        const item = localMenu.find(i => i.id === id);
+        const { error } = await supa.from('menu_items').delete().eq('id', id);
+        if (error) throw error;
+        toast('با موفقیت حذف شد');
+        logSystemAction('حذف منو/دستگاه', `حذف ${item ? item.name : id}`);
+    } catch (err) {
+        console.error('Delete menu error:', err);
+        toast('خطا در حذف', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+};
+
+document.getElementById('menuFormSave').addEventListener('click', async () => {
+    const id = document.getElementById('menuFormId').value;
+    const isTimer = document.getElementById('menuFormIsTimer').value === 'true';
+    const name = document.getElementById('menuFormName').value.trim();
+    const price = parseInt(document.getElementById('menuFormPrice').value);
+    const cat = document.getElementById('menuFormCat').value;
+
+    if (!name || isNaN(price) || price < 0) {
+        toast('نام یا مبلغ نامعتبر است', 'danger');
+        return;
+    }
+
+    uiLoading(true);
+    try {
+        const payload = { name, cat, price: isTimer ? price : price, is_timer: isTimer, hourly_rate: isTimer ? price : 0 };
+        let error;
+        if (id) {
+            ({ error } = await supa.from('menu_items').update(payload).eq('id', id));
+        } else {
+            ({ error } = await supa.from('menu_items').insert([payload]));
+        }
+        if (error) throw error;
+        toast('اطلاعات با موفقیت ذخیره شد');
+        logSystemAction('ذخیره منو/دستگاه', `${isTimer ? 'دستگاه' : 'آیتم'} ${name} ذخیره شد`);
+        bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
+    } catch (err) {
+        console.error('Save menu error:', err);
+        toast('خطا در ذخیره‌سازی', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+});
+
+function renderCats() {
+    document.getElementById('catManageList').innerHTML = localCats.map(c => `
+        <li class="list-group-item d-flex justify-content-between align-items-center p-2">${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>
+    `).join('');
+}
+
+document.getElementById('addCatBtn').addEventListener('click', async () => {
+    const name = document.getElementById('newCatName').value.trim();
+    if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
+    uiLoading(true);
+    try {
+        const { error } = await supa.from('categories').insert([{ name }]);
+        if (error) throw error;
+        document.getElementById('newCatName').value = '';
+        toast('دسته‌بندی افزوده شد');
+    } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
+    finally { uiLoading(false); }
+});
+
+window.deleteCat = async function(id) {
+    if (!confirm('حذف دسته؟')) return;
+    uiLoading(true);
+    try {
+        const { error } = await supa.from('categories').delete().eq('id', id);
+        if (error) throw error;
+        toast('دسته حذف شد');
+    } catch (err) { console.error('Delete cat error:', err); toast('خطا در حذف دسته', 'danger'); }
+    finally { uiLoading(false); }
+};
+
+// 6. ORDERS & TIMERS TAB
+function renderOrdersTab() {
+    renderCart();
+    updateLiveDeviceCardsUI();
+}
+
+const searchInput = document.getElementById('searchItem');
+const searchRes = document.getElementById('itemSearchResults');
+
+searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) { searchRes.style.display = 'none'; return; }
+    const items = localMenu.filter(i => !i.is_timer && i.name.toLowerCase().includes(q));
+    searchRes.innerHTML = items.length ? items.map(i => `
+        <div class="p-2 border-bottom d-flex justify-content-between" style="cursor:pointer;" onclick="addToCart(${i.id})">
+            <span>${escapeHtml(i.name)}</span><span class="text-primary fw-bold">${formatPrice(i.price)} تومان</span>
+        </div>
+    `).join('') : '<div class="p-2 text-muted small">یافت نشد</div>';
+    searchRes.style.display = 'block';
+});
+document.addEventListener('click', (e) => { if (!searchRes.contains(e.target) && e.target !== searchInput) searchRes.style.display = 'none'; });
+
+window.addToCart = function(id) {
+    const item = localMenu.find(i => i.id === id);
+    if (!item) return;
+    const exist = cart.find(c => c.id === id);
+    if (exist) exist.qty++;
+    else cart.push({ id: item.id, name: item.name, price: item.price, qty: 1, type: 'static' });
+    searchInput.value = '';
+    searchRes.style.display = 'none';
+    renderCart();
+    toast('به سبد اضافه شد');
+};
+
+function renderCart() {
+    const cdiv = document.getElementById('cartItems');
+    let total = 0;
+    if (!cart.length) cdiv.innerHTML = '<div class="empty-state">سبد خرید بوفه خالی است</div>';
+    else cdiv.innerHTML = cart.map((c, i) => {
+        total += c.price * c.qty;
+        return `
+            <div class="d-flex align-items-center justify-content-between border-bottom py-2">
+                <div style="flex:1;"><strong>${escapeHtml(c.name)}</strong></div>
+                <div class="d-flex align-items-center gap-2 me-3">
+                    <button class="btn btn-sm btn-light border" onclick="updateQty(${i}, -1)">-</button>
+                    <span class="fw-bold" style="min-width:20px;text-align:center">${c.qty}</span>
+                    <button class="btn btn-sm btn-light border" onclick="updateQty(${i}, 1)">+</button>
+                </div>
+                <div class="text-primary fw-bold me-2" style="min-width:80px;text-align:left">${formatPrice(c.price * c.qty)} تومان</div>
+                <button class="btn btn-sm text-danger" onclick="cart.splice(${i},1);renderCart()"><i class="fas fa-trash"></i></button>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('cartTotal').textContent = formatPrice(total);
+    document.getElementById('cartCount').textContent = cart.reduce((s, c) => s + c.qty, 0);
+}
+
+window.updateQty = function(idx, val) {
+    cart[idx].qty += val;
+    if (cart[idx].qty <= 0) cart.splice(idx, 1);
+    renderCart();
+};
+
+document.getElementById('submitOrderBtn').addEventListener('click', async () => {
+    if (!cart.length) { toast('سبد خرید خالی است', 'danger'); return; }
+    const custName = document.getElementById('customerName').value.trim();
+    if (!custName) { toast('نام مشتری الزامی است', 'danger'); return; }
+
+    uiLoading(true);
+    try {
+        const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
+        await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
+        const createdBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;
+        
+        const { error } = await supa.from('orders').insert([{
+            customer_name: custName,
+            items: cart,
+            total: total,
+            status: 'معلق',
+            created_by: createdBy
+        }]);
+        if (error) throw error;
+        
+        cart = [];
+        document.getElementById('customerName').value = '';
+        renderCart();
+        toast('سفارش بوفه ثبت شد');
+        logSystemAction('ثبت سفارش بوفه', `ثبت سفارش برای ${custName} به مبلغ ${formatPrice(total)} تومان`);
+        document.querySelector('[data-tab="settle"]').click();
+    } catch (err) {
+        console.error('Submit order error:', err);
+        toast('خطا در ثبت سفارش', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+});
+
+// UPDATE LIVE TIMER DEVICE CARDS IN UI
+function updateLiveDeviceCardsUI() {
+    const container = document.getElementById('liveDevicesContainer');
+    if (!container) return;
+
+    const timerDevices = localMenu.filter(m => m.is_timer);
+    if (!timerDevices.length) {
+        container.innerHTML = '<div class="empty-state">هیچ دستگاه تایمری تعریف نشده است (از بخش مدیریت منو اضافه کنید)</div>';
+        return;
+    }
+
+    container.innerHTML = timerDevices.map(device => {
+        const players = deviceSessions[device.id] || [];
+        const isActive = players.length > 0;
+        const rate = device.hourly_rate || device.price || 0;
+
+        let playersHTML = '';
+        if (isActive) {
+            playersHTML = players.map(p => {
+                const liveSeconds = Math.max(0, Math.floor((new Date() - new Date(p.start_time)) / 1000));
+                const liveCost = getPlayerLiveCost(p, device.id);
+                return `
+                    <div class="player-item">
+                        <div><span class="player-name">${escapeHtml(p.customer_name)}</span></div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="player-timer">${formatDuration(liveSeconds)}</span>
+                            <span class="player-cost">${formatPrice(liveCost)} ت</span>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="stopPlayerClick(${device.id}, '${escapeHtml(p.customer_name)}')">پایان</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            playersHTML = '<div class="text-muted small py-2">هیچ بازیکنی روی این دستگاه نیست</div>';
+        }
+
+        return `
+            <div class="device-card ${isActive ? 'active' : ''}">
+                <div class="device-header">
+                    <div class="device-title"><i class="fas fa-gamepad text-primary"></i> ${escapeHtml(device.name)}</div>
+                    <span class="device-status-badge ${isActive ? 'badge-active' : 'badge-free'}">${isActive ? `${players.length} بازیکن فعال` : 'آزاد'}</span>
+                </div>
+                <div class="device-rate"><i class="fas fa-clock text-secondary me-1"></i> نرخ هر ساعت: <strong>${formatPrice(rate)} تومان</strong> (تقسیم به ${players.length || 1} نفر)</div>
+                <div class="players-list">${playersHTML}</div>
+                <div class="device-actions">
+                    <button class="btn btn-sm btn-primary-custom flex-fill" onclick="addPlayerClick(${device.id})"><i class="fas fa-user-plus"></i> افزودن بازیکن</button>
+                    ${isActive ? `<button class="btn btn-sm btn-outline-secondary" onclick="transferPlayerClick(${device.id})"><i class="fas fa-exchange-alt"></i> انتقال</button>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.addPlayerClick = function(deviceId) {
+    const custName = prompt('نام بازیکن/مشتری را وارد کنید:');
+    if (!custName || !custName.trim()) return;
+    if (startDevicePlayer(deviceId, custName.trim())) {
+        toast(`بازیکن ${custName} روی دستگاه شروع به بازی کرد`);
+        updateLiveDeviceCardsUI();
+    }
+};
+
+window.stopPlayerClick = function(deviceId, customerName) {
+    if (!confirm(`آیا بازی ${customerName} پایان یابد؟`)) return;
+    const ended = stopDevicePlayer(deviceId, customerName);
+    if (ended) {
+        toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
+        updateLiveDeviceCardsUI();
+        refreshOrders();
+    }
+};
+
+window.transferPlayerClick = function(fromDeviceId) {
+    const activePlayers = (deviceSessions[fromDeviceId] || []).map(p => p.customer_name);
+    if (!activePlayers.length) return;
+    const selectedPlayer = prompt(`کدام بازیکن منتقل شود؟ (${activePlayers.join('، ')})`, activePlayers[0]);
+    if (!selectedPlayer || !activePlayers.includes(selectedPlayer.trim())) return;
+
+    const otherDevices = localMenu.filter(m => m.is_timer && m.id !== fromDeviceId);
+    if (!otherDevices.length) { toast('دستگاه تایمری دیگری وجود ندارد', 'warning'); return; }
+    
+    const deviceNames = otherDevices.map((d, idx) => `${idx + 1}. ${d.name}`).join('\n');
+    const targetIdx = prompt(`دستگاه مقصد را انتخاب کنید:\n${deviceNames}`);
+    const chosen = otherDevices[parseInt(targetIdx) - 1];
+    if (chosen) {
+        transferDevicePlayer(fromDeviceId, chosen.id, selectedPlayer.trim());
+        updateLiveDeviceCardsUI();
+    }
+};
+
+// 7. SETTLEMENT WITH DETAILED BREAKDOWN
+document.getElementById('settleSearch').addEventListener('input', renderSettlement);
+
+function renderSettlement() {
+    const sq = document.getElementById('settleSearch').value.trim().toLowerCase();
+    let pending = localOrders.filter(o => o.status === 'معلق');
+    if (sq) pending = pending.filter(o => (o.customer_name || '').toLowerCase().includes(sq));
+
+    // Group pending orders by customer_name
+    const groups = {};
+    pending.forEach(o => {
+        const c = o.customer_name || 'بدون نام';
+        if (!groups[c]) groups[c] = { ids: [], total: 0, items: [], createdBy: o.created_by };
+        groups[c].ids.push(o.id);
+        groups[c].total += (o.total || 0);
+        (o.items || []).forEach(it => groups[c].items.push(it));
+    });
+
+    const listDiv = document.getElementById('pendingOrdersList');
+    const keys = Object.keys(groups);
+    if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">هیچ سفارش یا فاکتور بازی جهت تسویه وجود ندارد</div>'; return; }
+
+    listDiv.innerHTML = keys.map(custName => {
+        const g = groups[custName];
+        const idsJson = escapeHtml(JSON.stringify(g.ids));
+        
+        const timerItems = g.items.filter(i => i.type === 'timer' || i.hourly_rate);
+        const staticItems = g.items.filter(i => i.type !== 'timer' && !i.hourly_rate);
+
+        let timerRows = timerItems.map(t => `
+            <div class="invoice-item-row">
+                <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)} (${t.duration_mins || 0} دقیقه)</span>
+                <span class="fw-bold">${formatPrice(t.price)} تومان</span>
+            </div>
+        `).join('');
+
+        let staticRows = staticItems.map(s => `
+            <div class="invoice-item-row">
+                <span><i class="fas fa-coffee text-info me-1"></i> ${escapeHtml(s.name)} (x${s.qty || 1})</span>
+                <span class="fw-bold">${formatPrice((s.price || 0) * (s.qty || 1))} تومان</span>
+            </div>
+        `).join('');
+
+        return `
+            <div class="invoice-card">
+                <div class="invoice-header">
+                    <div>
+                        <strong class="fs-5 text-dark"><i class="fas fa-user-circle text-primary me-1"></i> ${escapeHtml(custName)}</strong>
+                        <div class="small text-muted mt-1">ثبت کننده: ${escapeHtml(g.createdBy)}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fs-5 fw-bold text-success">${formatPrice(g.total)} تومان</div>
+                        <small class="text-muted">${g.ids.length} فاکتور معلق</small>
+                    </div>
+                </div>
+
+                <div class="invoice-details mb-3">
+                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌های تایمری:</div>${timerRows}` : ''}
+                    ${staticItems.length ? `<div class="invoice-section-title"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه و کافه:</div>${staticRows}` : ''}
+                    <div class="invoice-total-row">
+                        <span>مجموع قابل پرداخت:</span>
+                        <span>${formatPrice(g.total)} تومان</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> تسویه نقدی</button>
+                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> تسویه کارتخوان</button>
+                    <button class="btn btn-outline-danger" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i> لغو</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.settleCustomerGroup = async function(idsArray, method, customerName) {
+    if (method === 'لغو' && !confirm(`آیا تمامی سفارشات ${customerName} لغو شوند؟`)) return;
+    uiLoading(true);
+    try {
+        const settledBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;
+        const payload = { status: method, settled_by: settledBy };
+        
+        const { error } = await supa.from('orders').update(payload).in('id', idsArray);
+        if (error) throw error;
+
+        toast(`تسویه حساب ${customerName} با موفقیت ثبت شد (${method})`);
+        logSystemAction('تسویه حساب', `تسویه فاکتور ${customerName} به روش ${method} توسط ${settledBy}`);
+        refreshOrders();
+    } catch (err) {
+        console.error('Settle group error:', err);
+        toast('خطا در تسویه حساب', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+};
+
+// 8. HISTORY (2 SUB-TABS: CREATED BY vs SETTLED BY)
+function renderHistory() {
+    const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
+
+    if (activeSubTab === 'created') {
+        const payF = document.getElementById('histCreatedPayFilter').value;
+        const userF = document.getElementById('histCreatedUserFilter').value;
+        const dateF = document.getElementById('histCreatedDateFilter').value;
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+        let filtered = localOrders.filter(o => o.status !== 'معلق');
+        if (payF) filtered = filtered.filter(o => o.status === payF);
+        if (userF) filtered = filtered.filter(o => o.created_by === userF);
+        if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+
+        document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => {
+            const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            return `
+                <div class="border-bottom py-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="fw-bold">#${o.id} ${escapeHtml(o.customer_name)}</span>
+                        <span class="text-primary fw-bold">${formatPrice(o.total)} تومان</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${timeStr} | <i class="fas fa-user-edit me-1"></i> ثبت کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
+                        <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
+    } else {
+        const payF = document.getElementById('histSettledPayFilter').value;
+        const userF = document.getElementById('histSettledUserFilter').value;
+        const dateF = document.getElementById('histSettledDateFilter').value;
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+        let filtered = localOrders.filter(o => o.status !== 'معلق');
+        if (payF) filtered = filtered.filter(o => o.status === payF);
+        if (userF) filtered = filtered.filter(o => o.settled_by === userF);
+        if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
+
+        document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => {
+            const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            return `
+                <div class="border-bottom py-2">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="fw-bold">#${o.id} ${escapeHtml(o.customer_name)}</span>
+                        <span class="text-success fw-bold">${formatPrice(o.total)} تومان</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="order-meta m-0"><i class="fas fa-check-circle text-success me-1"></i> ${timeStr} | <i class="fas fa-user-check me-1"></i> تسویه‌کننده: <strong>${escapeHtml(o.settled_by || o.created_by || 'نامشخص')}</strong></div>
+                        <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
+    }
+}
+
+['histCreatedPayFilter', 'histCreatedUserFilter', 'histCreatedDateFilter', 'histSettledPayFilter', 'histSettledUserFilter', 'histSettledDateFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', renderHistory);
+});
+
+// 9. REPORTS (3 SUB-TABS: SALES, DEVICE PERF, SYSTEM LOGS)
+window.setRepDate = function(mode) {
+    const dFrom = document.getElementById('reportDateFrom');
+    const dTo = document.getElementById('reportDateTo');
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    if (mode === 'today') { dFrom.value = todayStr; dTo.value = todayStr; }
+    else if (mode === 'all') { dFrom.value = ''; dTo.value = ''; }
+    else {
+        const limit = new Date(now);
+        if (mode === '3days') limit.setDate(limit.getDate() - 2);
+        if (mode === 'week') limit.setDate(limit.getDate() - 6);
+        if (mode === 'month') limit.setDate(limit.getDate() - 29);
+        const lYear = limit.getFullYear();
+        const lMonth = String(limit.getMonth() + 1).padStart(2, '0');
+        const lDay = String(limit.getDate()).padStart(2, '0');
+        dFrom.value = `${lYear}-${lMonth}-${lDay}`;
+        dTo.value = todayStr;
+    }
+    renderReports();
+};
+
+document.getElementById('applyReportFilter').addEventListener('click', renderReports);
+
+function renderReports() {
+    const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
+    const fromD = document.getElementById('reportDateFrom').value;
+    const toD = document.getElementById('reportDateTo').value;
+    const userF = document.getElementById('reportUserFilter').value;
+
+    let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
+    if (fromD) {
+        const fromDate = new Date(fromD + 'T00:00:00');
+        orders = orders.filter(o => new Date(o.created_at) >= fromDate);
+    }
+    if (toD) {
+        const toDate = new Date(toD + 'T23:59:59.999');
+        orders = orders.filter(o => new Date(o.created_at) <= toDate);
+    }
+    if (userF) orders = orders.filter(o => o.created_by === userF || o.settled_by === userF);
+
+    if (activeSubTab === 'sales') {
+        const totalRev = orders.reduce((s, o) => s + (o.total || 0), 0);
+        const totalCash = orders.filter(o => o.status === 'نقدی').reduce((s, o) => s + (o.total || 0), 0);
+        const totalCard = orders.filter(o => o.status === 'کارت').reduce((s, o) => s + (o.total || 0), 0);
+
+        let itemsMap = {};
+        orders.forEach(o => {
+            (o.items || []).forEach(i => {
+                if (!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
+                itemsMap[i.name].qty += (i.qty || 1);
+                itemsMap[i.name].revenue += (i.price || 0) * (i.qty || 1);
+            });
+        });
+        const sortedItems = Object.entries(itemsMap).sort((a, b) => b[1].qty - a[1].qty);
+
+        document.getElementById('salesReportContent').innerHTML = `
+            <div id="printableReport" class="alert alert-light border shadow-sm mt-3" style="direction:rtl; text-align:right;">
+                <h5 class="text-center text-primary mb-3 fw-bold">آمار دقیق فروش</h5>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>فاکتورهای تسویه شده:</span> <strong>${orders.length} عدد</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع نقدی:</span> <strong class="text-success">${formatPrice(totalCash)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع کارتخوان:</span> <strong class="text-info">${formatPrice(totalCard)} تومان</strong></div>
+                <div class="d-flex justify-content-between mt-3 fs-5 border-bottom pb-2 mb-3"><span>کل درآمد:</span> <strong class="text-primary">${formatPrice(totalRev)} تومان</strong></div>
+                
+                <h6 class="fw-bold mt-2 text-dark"><i class="fas fa-list me-1"></i> ریز اقلام و خدمات فروخته شده:</h6>
+                <ul class="list-group list-group-flush small">
+                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(i[0])}</span> <span><span class="fw-bold text-dark">${i[1].qty}</span> بار/عدد (<span class="text-muted">${formatPrice(i[1].revenue)} تومان</span>)</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">موردی ثبت نشده است</li>'}
+                </ul>
+            </div>
+        `;
+        document.getElementById('reportActionBtns').style.setProperty('display', 'flex', 'important');
+    } 
+    else if (activeSubTab === 'devices') {
+        // Device Performance Stats
+        const timerDevices = localMenu.filter(m => m.is_timer);
+        let deviceStats = {};
+        timerDevices.forEach(d => { deviceStats[d.name] = { minutes: 0, revenue: 0, count: 0 }; });
+
+        orders.forEach(o => {
+            (o.items || []).forEach(i => {
+                if (i.type === 'timer' || i.hourly_rate) {
+                    const dName = i.device_name || i.name.replace('بازی ', '');
+                    if (!deviceStats[dName]) deviceStats[dName] = { minutes: 0, revenue: 0, count: 0 };
+                    deviceStats[dName].minutes += (i.duration_mins || 0);
+                    deviceStats[dName].revenue += (i.price || 0);
+                    deviceStats[dName].count++;
+                }
+            });
+        });
+
+        document.getElementById('deviceReportContent').innerHTML = `
+            <div class="row g-3 mt-2">
+                ${Object.entries(deviceStats).map(([name, stat]) => `
+                    <div class="col-12 col-md-6">
+                        <div class="card-modern">
+                            <h6 class="fw-bold text-primary"><i class="fas fa-gamepad me-1"></i> ${escapeHtml(name)}</h6>
+                            <div class="d-flex justify-content-between small border-bottom py-2"><span>تعداد دفعات بازی:</span> <strong>${stat.count} بار</strong></div>
+                            <div class="d-flex justify-content-between small border-bottom py-2"><span>مجموع زمان کارکرد:</span> <strong>${stat.minutes} دقیقه (${(stat.minutes/60).toFixed(1)} ساعت)</strong></div>
+                            <div class="d-flex justify-content-between small py-2 fs-6"><span>مجموع درآمد دستگاه:</span> <strong class="text-success">${formatPrice(stat.revenue)} تومان</strong></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
+    } 
+    else if (activeSubTab === 'logs') {
+        // Render System Action Logs Table
+        document.getElementById('logReportContent').innerHTML = `
+            <div class="table-responsive mt-3">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>زمان / تاریخ</th>
+                            <th>کاربر / پرسنل</th>
+                            <th>نوع اکشن</th>
+                            <th>جزئیات رویداد</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${localLogs.length ? localLogs.map(l => {
+                            const d = new Date(l.created_at);
+                            const timeStr = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) + ' - ' + d.toLocaleDateString('fa-IR');
+                            return `
+                                <tr>
+                                    <td><small class="text-muted">${timeStr}</small></td>
+                                    <td><strong>${escapeHtml(l.user_name)}</strong></td>
+                                    <td><span class="badge bg-secondary">${escapeHtml(l.action)}</span></td>
+                                    <td>${escapeHtml(l.details)}</td>
+                                </tr>
+                            `;
+                        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">هیچ رویدادی ثبت نشده است</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
+    }
+}
+
+window.copyReportText = function() {
+    const el = document.getElementById('printableReport');
+    if (!el) return;
+    const text = el.innerText.replace(/\n\s*\n/g, '\n');
+    navigator.clipboard.writeText(text).then(() => toast('متن گزارش کپی شد')).catch(() => toast('خطا در کپی', 'danger'));
+};
+
+window.printReportHTML = function() {
+    const el = document.getElementById('printableReport');
+    if (!el) return;
+    const pr = window.open('', '', 'height=600,width=800');
+    pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش</title><style>body{font-family:Vazir,Tahoma,Arial;font-size:14px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
+    pr.document.close();
+    pr.focus();
+    setTimeout(() => { pr.print(); pr.close(); }, 500);
+};
+
+// 10. SYSTEM & CUSTOMERS
+function renderUsers() {
+    document.getElementById('userList').innerHTML = localProfiles.map(u => `
+        <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+            <div>
+                <strong>${escapeHtml(u.full_name || 'بدون نام')}</strong>
+                <span class="badge ${u.role === 'manager' ? 'bg-primary' : 'bg-secondary'} ms-1">${u.role === 'manager' ? 'مدیر' : 'کارمند'}</span>
+                <div class="text-muted small">ایمیل: ${escapeHtml(u.email)}</div>
+            </div>
+        </div>
+    `).join('') || '<div class="empty-state">دیتای پرسنل لود نشد</div>';
+}
+
+document.getElementById('custSearch').addEventListener('input', renderCustomersList);
+
+function renderCustomersList() {
+    const sq = document.getElementById('custSearch').value.trim().toLowerCase();
+    let stats = {};
+    localOrders.forEach(o => {
+        if (o.status !== 'لغو' && o.status !== 'معلق') {
+            if (!stats[o.customer_name]) stats[o.customer_name] = { count: 0, spent: 0 };
+            stats[o.customer_name].count++;
+            stats[o.customer_name].spent += (o.total || 0);
+        }
+    });
+
+    let filtered = localCustomers;
+    if (sq) filtered = filtered.filter(c => c.full_name.toLowerCase().includes(sq));
+
+    document.getElementById('customerListTable').innerHTML = filtered.length ? filtered.map(c => {
+        const s = stats[c.full_name] || { count: 0, spent: 0 };
+        return `
+            <div class="border-bottom py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <strong class="fs-6 text-dark">${escapeHtml(c.full_name)}</strong>
+                    <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} سفارش صادر شده<br><i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
+                </div>
+                <div><button class="btn btn-sm btn-outline-primary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش نام</button></div>
+            </div>
+        `;
+    }).join('') : '<div class="empty-state">مشتری یافت نشد</div>';
+}
+
+window.editCustomer = async function(oldName) {
+    const newName = prompt('نام جدید مشتری را وارد کنید:', oldName);
+    if (!newName || newName.trim() === '' || newName === oldName) return;
+    const cleanNewName = newName.trim();
+    uiLoading(true);
+    try {
+        const check = localCustomers.find(c => c.full_name === cleanNewName);
+        if (check) { toast('این نام از قبل وجود دارد', 'danger'); return; }
+
+        const { error: err1 } = await supa.from('customers').update({ full_name: cleanNewName }).eq('full_name', oldName);
+        if (err1) throw err1;
+        const { error: err2 } = await supa.from('orders').update({ customer_name: cleanNewName }).eq('customer_name', oldName);
+        if (err2) throw err2;
+
+        toast('مشخصات مشتری با موفقیت ویرایش شد');
+        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${cleanNewName}`);
+    } catch (err) {
+        console.error('Edit customer error:', err);
+        toast('خطا در ویرایش اطلاعات مشتری', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+};
+
+document.addEventListener('DOMContentLoaded', initApp);

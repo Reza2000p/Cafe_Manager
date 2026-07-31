@@ -8,71 +8,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/font-face.css" rel="stylesheet" />
     <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-    <style>
-        * { font-family: 'Vazir', sans-serif; }
-        body { background: #f4f6fa; padding-bottom: 80px; font-size: 0.9rem; }
-        
-        .app-header { background: linear-gradient(135deg, #1e1e2f 0%, #2d2a7e 100%); color: white; padding: 14px 20px; box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15); position: sticky; top: 0; z-index: 1000; border-radius: 0 0 28px 28px; }
-        .brand { font-size: 1.25rem; font-weight: 700; }
-        .user-info { font-size: 0.85rem; opacity: 0.95; }
-        .user-info a { color: #ffd966; text-decoration: none; font-weight: 500; margin-right: 8px;}
-
-        .main-content { padding: 20px 16px 30px; max-width: 1200px; margin: 0 auto; }
-        .page { display: none; animation: fadeIn 0.3s ease; }
-        .page.active { display: block; }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-
-        .card-modern { background: #ffffff; border-radius: 20px; padding: 18px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0,0,0,0.02); margin-bottom: 20px; position: relative; }
-        .stat-card { text-align: center; padding: 15px 5px; border-radius: 16px; background: #fff; border: 1px solid #f0f0f0; height: 100%;}
-        .stat-card .icon-box { display: inline-flex; align-items: center; justify-content: center; width: 45px; height: 45px; border-radius: 12px; margin-bottom: 8px; font-size: 1.2rem;}
-        .stat-card h5 { font-size: 1.2rem; font-weight: 700; color: #2d2a7e; margin-bottom: 2px; }
-        .stat-card small { color: #888; font-size: 0.75rem; font-weight: 500;}
-
-        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.97); backdrop-filter: blur(12px); display: flex; justify-content: space-around; padding: 6px 0 14px; box-shadow: 0 -6px 30px rgba(0,0,0,0.06); border-radius: 28px 28px 0 0; z-index: 1050; }
-        .bottom-nav .nav-item { display: flex; flex-direction: column; align-items: center; color: #8a8a8a; font-size: 0.65rem; padding: 4px 5px; min-width: 50px; background: none; border: none; cursor: pointer;}
-        .bottom-nav .nav-item i { font-size: 1.3rem; margin-bottom: 3px; }
-        .bottom-nav .nav-item.active { color: #2d2a7e; font-weight: bold;}
-
-        @media (min-width: 768px) {
-            body { padding-bottom: 0; }
-            .bottom-nav { display: none; }
-            .desktop-nav { display: flex !important; gap: 8px; background: rgba(255,255,255,0.15); padding: 4px 14px; border-radius: 40px; }
-            .desktop-nav .nav-item { color: rgba(255,255,255,0.85); padding: 6px 16px; border-radius: 30px; font-size: 0.85rem; background: none; border: none; }
-            .desktop-nav .nav-item.active { background: rgba(255,255,255,0.25); color: white; }
-        }
-        @media (max-width: 767px) { .desktop-nav { display: none !important; } }
-
-        .btn-primary-custom { background: linear-gradient(135deg, #4b6cb7, #182848); color: white; border: none; border-radius: 12px; }
-        .btn-success-custom { background: linear-gradient(135deg, #11998e, #38ef7d); color: white; border: none; border-radius: 12px; }
-        
-        /* Pills Tabs Customization */
-        .nav-pills { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto; padding-bottom: 5px;}
-        .nav-pills::-webkit-scrollbar { display: none; }
-        .nav-pills .nav-item { flex: 1; min-width: max-content; }
-        .nav-pills .nav-link { border-radius: 15px; padding: 8px 15px; color: #6c757d; font-size: 0.85rem; text-align: center; width: 100%; white-space: nowrap; border: 1px solid #eee; background: #fdfdfd;}
-        .nav-pills .nav-link.active { background: #2d2a7e; color: white; border-color: #2d2a7e;}
-        
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; animation: fadeIn 0.3s ease; }
-        
-        .toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 280px; text-align: center; }
-        .empty-state { color: #a0a0a0; padding: 25px 0; text-align: center; font-size: 0.9rem; }
-        .order-meta { font-size: 0.75rem; color: #777; background: #f8f9fa; padding: 4px 8px; border-radius: 6px; display: inline-block; margin-top: 5px;}
-        
-        /* Quick Filters */
-        .quick-date-btn { font-size: 0.75rem; border-radius: 20px; padding: 4px 10px; border: 1px solid #ccc; background: white; color: #555; white-space: nowrap;}
-        .quick-date-btn:hover { background: #eee; }
-        .quick-dates-container { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 10px;}
-        .quick-dates-container::-webkit-scrollbar { display: none; }
-
-        #loadingOverlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(255,255,255,0.85); z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; display: none;}
-    </style>
 </head>
 <body>
 
-<div id="loadingOverlay"><div class="spinner-border text-primary" role="status"></div><div class="mt-2 fw-bold">در حال پردازش...</div></div>
+<div id="loadingOverlay">
+    <div class="spinner-border text-primary" role="status"></div>
+    <div class="mt-2 fw-bold">در حال پردازش...</div>
+</div>
 
 <header class="app-header">
     <div class="d-flex justify-content-between align-items-center">
@@ -80,14 +24,14 @@
         <div class="d-flex align-items-center gap-3">
             <nav class="desktop-nav" id="desktopNav">
                 <button class="nav-item active" data-page="dashboard"><i class="fas fa-chart-pie"></i> داشبورد</button>
-                <button class="nav-item" data-page="orders"><i class="fas fa-shopping-cart"></i> سفارشات</button>
-                <button class="nav-item" data-page="menu"><i class="fas fa-utensils"></i> منو</button>
+                <button class="nav-item" data-page="orders"><i class="fas fa-shopping-cart"></i> سفارشات و دستگاه‌ها</button>
+                <button class="nav-item" data-page="menu"><i class="fas fa-utensils"></i> مدیریت منو</button>
                 <button class="nav-item" data-page="reports"><i class="fas fa-file-alt"></i> گزارشات</button>
                 <button class="nav-item" data-page="system"><i class="fas fa-cogs"></i> سیستم</button>
             </nav>
             <div class="user-info">
                 <i class="fas fa-user-circle"></i> <span id="currentUser">میهمان</span>
-                <a href="#" id="logoutBtn" style="display:none;"><i class="fas fa-sign-out-alt"></i></a>
+                <a href="#" id="logoutBtn" style="display:none;"><i class="fas fa-sign-out-alt ms-1"></i></a>
             </div>
         </div>
     </div>
@@ -113,7 +57,7 @@
     <!-- DASHBOARD -->
     <div id="page-dashboard" class="page">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold text-dark mb-0"><i class="fas fa-chart-pie text-primary me-2"></i> داشبورد</h5>
+            <h5 class="fw-bold text-dark mb-0"><i class="fas fa-chart-pie text-primary me-2"></i> داشبورد مدیریت</h5>
             <select id="dashTimeFilter" class="form-select form-select-sm w-auto shadow-sm" style="border-radius:10px; font-weight:bold;">
                 <option value="today">امروز</option><option value="week">۷ روز گذشته</option>
                 <option value="month">۳۰ روز گذشته</option><option value="all">کل آمار</option>
@@ -121,88 +65,136 @@
         </div>
         <div class="row g-2 mb-3" id="dashboardStats"></div>
         <div class="row g-3">
-            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-star text-warning"></i> پرفروش‌ترین آیتم‌ها</h6><div id="topItems"></div></div></div>
-            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-crown text-success"></i> برترین مشتریان</h6><div id="topCustomersList"></div></div></div>
-            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-clock text-info"></i> آخرین سفارشات</h6><div id="recentOrders"></div></div></div>
+            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-star text-warning me-1"></i> پرفروش‌ترین ثابت‌ها (بوفه)</h6><div id="topItems"></div></div></div>
+            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-crown text-success me-1"></i> برترین مشتریان</h6><div id="topCustomersList"></div></div></div>
+            <div class="col-md-4"><div class="card-modern h-100"><h6><i class="fas fa-clock text-info me-1"></i> آخرین فاکتورها</h6><div id="recentOrders"></div></div></div>
         </div>
     </div>
 
-    <!-- ORDERS -->
+    <!-- ORDERS & DEVICES -->
     <div id="page-orders" class="page">
         <ul class="nav nav-pills mb-3" id="orderTabs">
-            <li class="nav-item"><button class="nav-link active" data-tab="take">ثبت سفارش</button></li>
-            <li class="nav-item"><button class="nav-link" data-tab="settle">تسویه فاکتور</button></li>
-            <li class="nav-item"><button class="nav-link" data-tab="history">تاریخچه سفارشات</button></li>
+            <li class="nav-item"><button class="nav-link active" data-tab="take"><i class="fas fa-coffee me-1"></i> ثبت سفارش (ثابت‌ها)</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="timers"><i class="fas fa-gamepad me-1"></i> دستگاه‌ها (تایمری‌ها)</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="settle"><i class="fas fa-calculator me-1"></i> تسویه فاکتور</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="history"><i class="fas fa-history me-1"></i> تاریخچه</button></li>
         </ul>
+        
         <div id="orderTabContent">
-            
+            <!-- Static Orders Tab -->
             <div class="tab-pane active" id="tab-take">
                 <div class="card-modern">
-                    <input type="text" id="searchItem" class="form-control mb-1" placeholder="جستجوی آیتم برای افزودن به سبد...">
-                    <div id="itemSearchResults" class="bg-white shadow-sm rounded" style="position:absolute; z-index:100; width:85%; max-height:200px; overflow-y:auto; display:none; border:1px solid #ddd;"></div>
+                    <input type="text" id="searchItem" class="form-control mb-1" placeholder="جستجوی آیتم ثابت برای افزودن به سبد...">
+                    <div id="itemSearchResults" class="bg-white shadow-sm rounded" style="position:absolute; z-index:100; width:95%; max-height:200px; overflow-y:auto; display:none; border:1px solid #ddd;"></div>
                     <hr>
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <strong class="text-primary">سبد خرید</strong><span class="badge bg-primary rounded-pill px-3" id="cartCount">0</span>
+                        <strong class="text-primary"><i class="fas fa-shopping-basket me-1"></i> سبد خرید بوفه</strong>
+                        <span class="badge bg-primary rounded-pill px-3" id="cartCount">0</span>
                     </div>
                     <div id="cartItems"></div>
-                    <div class="mt-3 text-end fs-5"><strong>جمع کل: <span id="cartTotal" class="text-success">0</span> تومان</strong></div>
+                    <div class="mt-3 text-end fs-5"><strong>جمع کالاها: <span id="cartTotal" class="text-success">0</span> تومان</strong></div>
                     <div class="row g-2 mt-3">
-                        <div class="col-12 col-md-8"><input type="text" id="customerName" class="form-control border-primary" placeholder="نام کامل مشتری (الزامی و غیرتکراری) *" required></div>
-                        <div class="col-12 col-md-4"><button class="btn btn-success-custom w-100 py-2" id="submitOrderBtn"><i class="fas fa-check-circle"></i> ثبت نهایی</button></div>
+                        <div class="col-12 col-md-8"><input type="text" id="customerName" class="form-control border-primary" placeholder="نام کامل مشتری *" required></div>
+                        <div class="col-12 col-md-4"><button class="btn btn-success-custom w-100 py-2" id="submitOrderBtn"><i class="fas fa-check-circle me-1"></i> ثبت سفارش بوفه</button></div>
                     </div>
                 </div>
             </div>
 
+            <!-- Timer Devices Tab -->
+            <div class="tab-pane" id="tab-timers">
+                <div class="card-modern">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold m-0"><i class="fas fa-gamepad text-primary me-1"></i> دستگاه‌های بازی و تایمرهای زنده</h6>
+                        <small class="text-muted"><i class="fas fa-sync fa-spin me-1"></i> تایمر زنده فعال است</small>
+                    </div>
+                    <div id="liveDevicesContainer" class="device-grid"></div>
+                </div>
+            </div>
+
+            <!-- Settlement Tab -->
             <div class="tab-pane" id="tab-settle">
                 <div class="card-modern">
+                    <h6 class="fw-bold mb-3"><i class="fas fa-calculator text-primary me-1"></i> تسویه فاکتور و ریز محاسبات</h6>
                     <input type="text" id="settleSearch" class="form-control mb-3" placeholder="جستجو بر اساس نام مشتری...">
                     <div id="pendingOrdersList"></div>
                 </div>
             </div>
 
+            <!-- History Tab (Split into 2 Sub-Tabs) -->
             <div class="tab-pane" id="tab-history">
                 <div class="card-modern">
-                    <div class="row g-2 mb-3 bg-light p-2 rounded">
-                        <div class="col-12 col-md-4"><select id="histPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
-                        <div class="col-12 col-md-4"><select id="histUserFilter" class="form-select"><option value="">همه پرسنل</option></select></div>
-                        <div class="col-12 col-md-4"><select id="histDateFilter" class="form-select"><option value="today">امروز</option><option value="all">تمام تاریخچه</option></select></div>
+                    <ul class="nav nav-pills mb-3" id="historySubTabs">
+                        <li class="nav-item"><button class="nav-link active" data-tab="created"><i class="fas fa-user-edit me-1"></i> ثبت سفارش‌ها (ثبت‌کننده)</button></li>
+                        <li class="nav-item"><button class="nav-link" data-tab="settled"><i class="fas fa-user-check me-1"></i> تسویه‌ها (تسویه‌کننده)</button></li>
+                    </ul>
+
+                    <div id="historySubTabContent">
+                        <!-- Created By Sub-Tab -->
+                        <div class="tab-pane active" id="htab-created">
+                            <div class="row g-2 mb-3 bg-light p-2 rounded">
+                                <div class="col-12 col-md-4"><select id="histCreatedPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
+                                <div class="col-12 col-md-4"><select id="histCreatedUserFilter" class="form-select"><option value="">همه پرسنل ثبت‌کننده</option></select></div>
+                                <div class="col-12 col-md-4"><select id="histCreatedDateFilter" class="form-select"><option value="today">امروز</option><option value="all">تمام تاریخچه</option></select></div>
+                            </div>
+                            <div id="historyCreatedList"></div>
+                        </div>
+
+                        <!-- Settled By Sub-Tab -->
+                        <div class="tab-pane" id="htab-settled">
+                            <div class="row g-2 mb-3 bg-light p-2 rounded">
+                                <div class="col-12 col-md-4"><select id="histSettledPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
+                                <div class="col-12 col-md-4"><select id="histSettledUserFilter" class="form-select"><option value="">همه پرسنل تسویه‌کننده</option></select></div>
+                                <div class="col-12 col-md-4"><select id="histSettledDateFilter" class="form-select"><option value="today">امروز</option><option value="all">تمام تاریخچه</option></select></div>
+                            </div>
+                            <div id="historySettledList"></div>
+                        </div>
                     </div>
-                    <div id="historyList"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- MENU -->
+    <!-- MENU MANAGEMENT -->
     <div id="page-menu" class="page">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold"><i class="fas fa-utensils text-primary me-2"></i> مدیریت منو</h5>
+            <h5 class="fw-bold mb-0"><i class="fas fa-utensils text-primary me-2"></i> مدیریت منو و دستگاه‌ها</h5>
         </div>
         <ul class="nav nav-pills mb-3" id="menuTabs">
-            <li class="nav-item"><button class="nav-link active" data-tab="items">آیتم‌های منو</button></li>
-            <li class="nav-item"><button class="nav-link" data-tab="cats">دسته‌بندی‌ها</button></li>
+            <li class="nav-item"><button class="nav-link active" data-tab="static"><i class="fas fa-coffee me-1"></i> ثابت‌ها (بوفه)</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="timers"><i class="fas fa-gamepad me-1"></i> تایمری‌ها (دستگاه‌ها)</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="cats"><i class="fas fa-tags me-1"></i> دسته‌بندی‌ها</button></li>
         </ul>
         <div id="menuTabContent">
-            <!-- Items Tab -->
-            <div class="tab-pane active" id="mtab-items">
+            <!-- Static Items -->
+            <div class="tab-pane active" id="mtab-static">
                 <div class="card-modern">
-                    <div class="d-flex justify-content-end mb-2"><button class="btn btn-primary-custom btn-sm" id="addMenuItemBtn"><i class="fas fa-plus"></i> آیتم جدید</button></div>
-                    <div class="row g-2 mb-3 bg-light p-2 rounded">
-                        <div class="col-12 col-md-4"><input type="text" id="menuSearch" class="form-control" placeholder="جستجو نام..."></div>
-                        <div class="col-12 col-md-3"><select id="menuCatFilter" class="form-select"><option value="">همه دسته‌ها</option></select></div>
-                        <div class="col-6 col-md-2"><input type="number" id="menuPriceMin" class="form-control" placeholder="حداقل قیمت"></div>
-                        <div class="col-6 col-md-2"><input type="number" id="menuPriceMax" class="form-control" placeholder="حداکثر قیمت"></div>
-                        <div class="col-12 col-md-1"><button class="btn btn-secondary w-100" id="clearMenuFilter"><i class="fas fa-times"></i></button></div>
+                    <div class="d-flex justify-content-end mb-2">
+                        <button class="btn btn-primary-custom btn-sm" id="addStaticItemBtn"><i class="fas fa-plus me-1"></i> آیتم ثابت جدید</button>
                     </div>
-                    <div id="menuList"></div>
+                    <div class="row g-2 mb-3 bg-light p-2 rounded">
+                        <div class="col-12 col-md-6"><input type="text" id="menuSearch" class="form-control" placeholder="جستجو نام..."></div>
+                        <div class="col-12 col-md-6"><select id="menuCatFilter" class="form-select"><option value="">همه دسته‌ها</option></select></div>
+                    </div>
+                    <div id="staticMenuList"></div>
                 </div>
             </div>
-            <!-- Categories Tab -->
+
+            <!-- Timer Devices -->
+            <div class="tab-pane" id="mtab-timers">
+                <div class="card-modern">
+                    <div class="d-flex justify-content-end mb-2">
+                        <button class="btn btn-success-custom btn-sm" id="addTimerDeviceBtn"><i class="fas fa-plus me-1"></i> دستگاه تایمری جدید</button>
+                    </div>
+                    <div id="timerMenuList"></div>
+                </div>
+            </div>
+
+            <!-- Categories -->
             <div class="tab-pane" id="mtab-cats">
                 <div class="card-modern">
                     <div class="d-flex gap-2 mb-3">
                         <input type="text" id="newCatName" class="form-control" placeholder="نام دسته جدید...">
-                        <button class="btn btn-success-custom px-4" id="addCatBtn">ثبت</button>
+                        <button class="btn btn-success-custom px-4" id="addCatBtn">ثبت دسته</button>
                     </div>
                     <ul class="list-group" id="catManageList"></ul>
                 </div>
@@ -210,11 +202,11 @@
         </div>
     </div>
 
-    <!-- REPORTS -->
+    <!-- REPORTS (3 SUB-TABS: SALES, DEVICE PERF, SYSTEM LOGS) -->
     <div id="page-reports" class="page">
-        <h5 class="mb-3 fw-bold"><i class="fas fa-file-alt text-primary me-2"></i> گزارشات فروش</h5>
+        <h5 class="mb-3 fw-bold"><i class="fas fa-file-alt text-primary me-2"></i> گزارشات جامع</h5>
         <div class="card-modern">
-            <div class="quick-dates-container">
+            <div class="quick-dates-container mb-2">
                 <button class="quick-date-btn" onclick="setRepDate('today')">امروز</button>
                 <button class="quick-date-btn" onclick="setRepDate('3days')">۳ روز گذشته</button>
                 <button class="quick-date-btn" onclick="setRepDate('week')">هفته گذشته</button>
@@ -224,31 +216,41 @@
             <div class="row g-2 mb-3 bg-light p-2 rounded">
                 <div class="col-12 col-md-4"><label class="form-label small text-muted mb-0">از تاریخ:</label><input type="date" id="reportDateFrom" class="form-control form-control-sm"></div>
                 <div class="col-12 col-md-4"><label class="form-label small text-muted mb-0">تا تاریخ:</label><input type="date" id="reportDateTo" class="form-control form-control-sm"></div>
-                <div class="col-12 col-md-4"><label class="form-label small text-muted mb-0">پرسنل ثبت‌کننده:</label><select id="reportUserFilter" class="form-select form-select-sm"><option value="">همه پرسنل</option></select></div>
-                <div class="col-12"><button class="btn btn-primary-custom w-100 mt-2" id="applyReportFilter"><i class="fas fa-cogs"></i> تولید گزارش</button></div>
-            </div>
-            
-            <div id="reportActionBtns" class="d-flex gap-2 mb-3" style="display: none !important;">
-                <button class="btn btn-sm btn-outline-dark flex-fill" onclick="copyReportText()"><i class="fas fa-copy"></i> کپی متن</button>
-                <button class="btn btn-sm btn-outline-primary flex-fill" onclick="printReportHTML()"><i class="fas fa-print"></i> چاپ / PDF</button>
+                <div class="col-12 col-md-4"><label class="form-label small text-muted mb-0">پرسنل مربوطه:</label><select id="reportUserFilter" class="form-select form-select-sm"><option value="">همه پرسنل</option></select></div>
+                <div class="col-12"><button class="btn btn-primary-custom w-100 mt-2" id="applyReportFilter"><i class="fas fa-cogs me-1"></i> بروزرسانی گزارشات</button></div>
             </div>
 
-            <div id="salesReportContent"><div class="empty-state">جهت مشاهده آمار، دکمه تولید گزارش را بزنید</div></div>
+            <ul class="nav nav-pills mb-3" id="reportSubTabs">
+                <li class="nav-item"><button class="nav-link active" data-tab="sales"><i class="fas fa-chart-line me-1"></i> آمار فروش مالی</button></li>
+                <li class="nav-item"><button class="nav-link" data-tab="devices"><i class="fas fa-gamepad me-1"></i> عملکرد دستگاه‌ها</button></li>
+                <li class="nav-item"><button class="nav-link" data-tab="logs"><i class="fas fa-list-alt me-1"></i> لاگ سیستم (رویدادها)</button></li>
+            </ul>
+
+            <div id="reportActionBtns" class="d-flex gap-2 mb-3" style="display: none !important;">
+                <button class="btn btn-sm btn-outline-dark flex-fill" onclick="copyReportText()"><i class="fas fa-copy me-1"></i> کپی متن گزارش</button>
+                <button class="btn btn-sm btn-outline-primary flex-fill" onclick="printReportHTML()"><i class="fas fa-print me-1"></i> چاپ / PDF</button>
+            </div>
+
+            <div id="reportSubTabContent">
+                <div class="tab-pane active" id="rtab-sales"><div id="salesReportContent"><div class="empty-state">جهت مشاهده گزارش دکمه بروزرسانی را بزنید</div></div></div>
+                <div class="tab-pane" id="rtab-devices"><div id="deviceReportContent"></div></div>
+                <div class="tab-pane" id="rtab-logs"><div id="logReportContent"></div></div>
+            </div>
         </div>
     </div>
 
-    <!-- SYSTEM -->
+    <!-- SYSTEM & USERS -->
     <div id="page-system" class="page">
-        <h5 class="mb-3 fw-bold"><i class="fas fa-cogs text-primary me-2"></i> سیستم</h5>
+        <h5 class="mb-3 fw-bold"><i class="fas fa-cogs text-primary me-2"></i> مدیریت سیستم</h5>
         <ul class="nav nav-pills mb-3" id="systemTabs">
-            <li class="nav-item"><button class="nav-link active" data-tab="users">پرسنل</button></li>
-            <li class="nav-item"><button class="nav-link" data-tab="customers">مشتریان</button></li>
+            <li class="nav-item"><button class="nav-link active" data-tab="users"><i class="fas fa-users me-1"></i> پرسنل</button></li>
+            <li class="nav-item"><button class="nav-link" data-tab="customers"><i class="fas fa-address-book me-1"></i> مشتریان</button></li>
         </ul>
         <div id="systemTabContent">
             <!-- Users Tab -->
             <div class="tab-pane active" id="stab-users">
-                <div class="alert alert-warning small border-0 shadow-sm rounded-3"><i class="fas fa-shield-alt"></i> ساخت کاربر جدید صرفاً از طریق پنل اصلی Supabase امکان‌پذیر است.</div>
-                <div class="card-modern"><h6 class="mb-3">لیست پرسنل فعال</h6><div id="userList"></div></div>
+                <div class="alert alert-warning small border-0 shadow-sm rounded-3"><i class="fas fa-shield-alt me-1"></i> ساخت کاربر جدید صرفاً از طریق پنل اصلی Supabase امکان‌پذیر است.</div>
+                <div class="card-modern"><h6 class="mb-3 fw-bold">لیست پرسنل فعال</h6><div id="userList"></div></div>
             </div>
             <!-- Customers Tab -->
             <div class="tab-pane" id="stab-customers">
@@ -269,622 +271,42 @@
     <button class="nav-item" data-page="system"><i class="fas fa-cogs"></i><span>سیستم</span></button>
 </nav>
 
-<!-- MODAL: MENU ITEM -->
+<!-- MODAL: ITEM / DEVICE -->
 <div class="modal fade" id="menuModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered"><div class="modal-content rounded-4 border-0"><div class="modal-header border-0 pb-0"><h6 class="modal-title fw-bold">افزودن/ویرایش آیتم</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="menuFormId"><div class="mb-3"><label class="form-label small">نام آیتم</label><input type="text" id="menuFormName" class="form-control" required></div><div class="mb-3"><label class="form-label small">قیمت (تومان)</label><input type="number" id="menuFormPrice" class="form-control" required></div><div class="mb-3"><label class="form-label small">دسته‌بندی</label><select id="menuFormCat" class="form-select"></select></div></div><div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-primary-custom w-100" id="menuFormSave">ذخیره آیتم در سرور</button></div></div></div>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-0 pb-0">
+                <h6 class="modal-title fw-bold" id="menuModalTitle">افزودن/ویرایش آیتم</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="menuFormId">
+                <input type="hidden" id="menuFormIsTimer" value="false">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">نام آیتم / دستگاه</label>
+                    <input type="text" id="menuFormName" class="form-control" placeholder="مثال: اسپرسو / پی اس ۵ دستگاه ۱" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold" id="priceLabel">قیمت (تومان)</label>
+                    <input type="number" id="menuFormPrice" class="form-control" placeholder="مثال: ۵۰۰۰۰" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">دسته‌بندی</label>
+                    <select id="menuFormCat" class="form-select"></select>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-primary-custom w-100" id="menuFormSave">ذخیره اطلاعات در سرور</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    // ==========================================
-    // 1. SUPABASE CONFIGURATION
-    // ==========================================
-    const SUPABASE_URL = 'https://mknpjmdnbgteopvqwzcq.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rbnBqbWRuYmd0ZW9wdnF3emNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTcwODQsImV4cCI6MjEwMDk5MzA4NH0.-Tysg5UZYoXgKM-BCl1FecaolvwKHr_XfAesKVWeUyc';
-    const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    // ==========================================
-    // STATE & GLOBAL VARS
-    // ==========================================
-    let currentUser = null; let userProfile = null; let cart = [];
-    let localMenu = []; let localCats = []; let localOrders = []; let localProfiles = []; let localCustomers = [];
-
-    const uiLoading = (state) => { document.getElementById('loadingOverlay').style.display = state ? 'flex' : 'none'; };
-    function toast(msg, type='success') {
-        const c = document.getElementById('toastContainer'); const div = document.createElement('div');
-        div.className = `alert alert-${type} shadow-lg py-2 px-3 mb-2 rounded-3 text-center`; div.innerHTML = `<span class="fw-bold">${escapeHtml(msg)}</span>`;
-        c.appendChild(div); setTimeout(() => div.remove(), 2500);
-    }
-    function formatPrice(p) { return Number(p || 0).toLocaleString(); }
-    function escapeHtml(str) {
-        if (!str && str !== 0) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-    
-    // Register Service Worker for PWA
-    if('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); }); }
-
-    // ==========================================
-    // 2. AUTHENTICATION & INIT
-    // ==========================================
-    async function initApp() {
-        uiLoading(true);
-        try {
-            const { data: { session }, error } = await supa.auth.getSession();
-            if (error) throw error;
-            if (session) {
-                currentUser = session.user; await loadInitialData();
-                document.getElementById('logoutBtn').style.display = 'inline';
-                showPage('dashboard'); initRealtime(); 
-            } else { showPage('login'); }
-        } catch (err) {
-            console.error('Init app error:', err);
-            toast('خطا در برقراری ارتباط با سرور', 'danger');
-            showPage('login');
-        } finally {
-            uiLoading(false);
-        }
-
-        supa.auth.onAuthStateChange(async (event, session) => {
-            if (event === 'SIGNED_OUT') { currentUser = null; userProfile = null; document.getElementById('logoutBtn').style.display = 'none'; showPage('login'); }
-        });
-    }
-
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault(); uiLoading(true);
-        try {
-            const email = document.getElementById('loginEmail').value.trim(); 
-            const password = document.getElementById('loginPassword').value.trim();
-            const { data, error } = await supa.auth.signInWithPassword({ email, password });
-            if (error) { 
-                toast('ایمیل یا رمز عبور اشتباه است', 'danger'); 
-            } else {
-                currentUser = data.user; await loadInitialData();
-                document.getElementById('logoutBtn').style.display = 'inline';
-                document.getElementById('loginEmail').value = ''; document.getElementById('loginPassword').value = '';
-                toast('با موفقیت وارد شدید'); showPage('dashboard'); initRealtime();
-            }
-        } catch (err) {
-            console.error('Login error:', err);
-            toast('خطا در ورود به سیستم', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    });
-    document.getElementById('logoutBtn').addEventListener('click', async (e) => { e.preventDefault(); await supa.auth.signOut(); });
-
-    // ==========================================
-    // 3. FETCH DATA & REALTIME
-    // ==========================================
-    async function loadInitialData() {
-        try {
-            const { data: prof } = await supa.from('profiles').select('*').eq('id', currentUser.id).single();
-            userProfile = prof || { full_name: currentUser.email, role: 'staff' };
-            document.getElementById('currentUser').textContent = userProfile.full_name || currentUser.email;
-
-            const [menuRes, catsRes, ordersRes, profilesRes, custRes] = await Promise.all([
-                supa.from('menu_items').select('*'), 
-                supa.from('categories').select('*'),
-                supa.from('orders').select('*').order('created_at', { ascending: false }),
-                supa.from('profiles').select('*'), 
-                supa.from('customers').select('*').order('created_at', { ascending: false })
-            ]);
-            localMenu = menuRes.data || []; 
-            localCats = catsRes.data || []; 
-            localOrders = ordersRes.data || []; 
-            localProfiles = profilesRes.data || []; 
-            localCustomers = custRes.data || [];
-            populateFilters();
-        } catch (err) {
-            console.error('Load initial data error:', err);
-            toast('خطا در دریافت اطلاعات اولیه', 'danger');
-        }
-    }
-
-    function initRealtime() {
-        supa.channel('public-tables')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => { refreshOrders(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, payload => { refreshMenu(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => { refreshCats(); })
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, payload => { refreshCustomers(); })
-            .subscribe();
-    }
-
-    async function refreshOrders() {
-        try {
-            const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false }); 
-            localOrders = data || [];
-            if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
-            if(document.getElementById('page-orders').classList.contains('active')) { renderOrders(); renderHistory(); }
-            if(document.getElementById('page-system').classList.contains('active')) renderCustomersList();
-        } catch(err) { console.error('Refresh orders error:', err); }
-    }
-    async function refreshMenu() { 
-        try {
-            const { data } = await supa.from('menu_items').select('*'); 
-            localMenu = data || []; 
-            if(document.getElementById('page-menu').classList.contains('active')) renderMenu(); 
-        } catch(err) { console.error('Refresh menu error:', err); }
-    }
-    async function refreshCats() { 
-        try {
-            const { data } = await supa.from('categories').select('*'); 
-            localCats = data || []; 
-            populateCatSelects(); 
-            if(document.getElementById('page-menu').classList.contains('active')) renderCats(); 
-        } catch(err) { console.error('Refresh cats error:', err); }
-    }
-    async function refreshCustomers() { 
-        try {
-            const { data } = await supa.from('customers').select('*').order('created_at', { ascending: false }); 
-            localCustomers = data || []; 
-            if(document.getElementById('page-system').classList.contains('active')) renderCustomersList(); 
-        } catch(err) { console.error('Refresh customers error:', err); }
-    }
-
-    function populateFilters() {
-        const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
-        const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
-        document.getElementById('histUserFilter').innerHTML = opts; 
-        document.getElementById('reportUserFilter').innerHTML = opts;
-    }
-
-    // ==========================================
-    // TABS & NAVIGATION
-    // ==========================================
-    function showPage(page) {
-        if (!currentUser && page !== 'login') return;
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active')); document.getElementById(`page-${page}`).classList.add('active');
-        document.querySelectorAll('.bottom-nav .nav-item, .desktop-nav .nav-item').forEach(b => { b.classList.toggle('active', b.dataset.page === page); });
-        
-        if (page !== 'login') {
-            if(page === 'dashboard') renderDashboard();
-            if(page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
-            if(page === 'orders') { 
-                const act = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
-                if(act === 'settle') renderOrders(); if(act === 'history') renderHistory();
-            }
-            if(page === 'system') { renderUsers(); renderCustomersList(); }
-        }
-    }
-    document.querySelectorAll('.nav-item').forEach(btn => { btn.addEventListener('click', function() { if(this.dataset.page) showPage(this.dataset.page); }); });
-    
-    // Generic Tab Switcher function
-    function setupTabs(navId, contentId, callback) {
-        document.querySelectorAll(`#${navId} .nav-link`).forEach(tab => {
-            tab.addEventListener('click', function() {
-                document.querySelectorAll(`#${navId} .nav-link`).forEach(t => t.classList.remove('active')); this.classList.add('active');
-                document.querySelectorAll(`#${contentId} .tab-pane`).forEach(p => p.classList.remove('active'));
-                const target = document.querySelector(`#${contentId} [id$="${this.dataset.tab}"]`);
-                if(target) target.classList.add('active');
-                if(callback) callback(this.dataset.tab);
-            });
-        });
-    }
-    setupTabs('orderTabs', 'orderTabContent', (tab) => { if(tab==='settle') renderOrders(); if(tab==='history') renderHistory(); });
-    setupTabs('menuTabs', 'menuTabContent', null);
-    setupTabs('systemTabs', 'systemTabContent', null);
-
-    // ==========================================
-    // DASHBOARD
-    // ==========================================
-    document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
-    function renderDashboard() {
-        const timeFilter = document.getElementById('dashTimeFilter').value;
-        const now = new Date(); 
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        let targetOrders = localOrders.filter(o => o.status !== 'لغو');
-
-        if (timeFilter === 'today') targetOrders = targetOrders.filter(o => new Date(o.created_at) >= startOfToday);
-        else if (timeFilter === 'week' || timeFilter === 'month') {
-            const limitDate = new Date(startOfToday); 
-            limitDate.setDate(limitDate.getDate() - (timeFilter === 'week' ? 7 : 30) + 1);
-            targetOrders = targetOrders.filter(o => new Date(o.created_at) >= limitDate);
-        }
-
-        const settledOrders = targetOrders.filter(o => o.status !== 'معلق');
-        const totalSales = settledOrders.reduce((s,o) => s + (o.total||0), 0);
-        let totalItems = 0; targetOrders.forEach(o => { if(o.items) totalItems += o.items.reduce((s,i)=>s+(i.qty||0),0); });
-        const avgValue = settledOrders.length ? Math.round(totalSales / settledOrders.length) : 0;
-
-        document.getElementById('dashboardStats').innerHTML = `
-            <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-primary text-white bg-opacity-75"><i class="fas fa-shopping-bag"></i></div><h5>${targetOrders.length}</h5><small>سفارشات</small></div></div>
-            <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-success text-white bg-opacity-75"><i class="fas fa-wallet"></i></div><h5>${formatPrice(totalSales)}</h5><small>درآمد (تومان)</small></div></div>
-            <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-info text-white bg-opacity-75"><i class="fas fa-chart-line"></i></div><h5>${formatPrice(avgValue)}</h5><small>میانگین خرید</small></div></div>
-            <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-warning text-dark bg-opacity-75"><i class="fas fa-cubes"></i></div><h5>${totalItems}</h5><small>کالا فروخته شده</small></div></div>
-        `;
-        
-        const validOrders = targetOrders.filter(o => o.status !== 'معلق');
-        // Top Items
-        const itemMap = {}; validOrders.forEach(o => { (o.items||[]).forEach(i => { itemMap[i.name] = (itemMap[i.name]||0) + (i.qty||1); }); });
-        const topItems = Object.entries(itemMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
-        
-        // Top Customers
-        const custMap = {}; validOrders.forEach(o => { if(o.customer_name) custMap[o.customer_name] = (custMap[o.customer_name]||0) + (o.total||0); });
-        const topCust = Object.entries(custMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
-
-        // Recent Orders
-        const recent = validOrders.slice(0, 5); 
-        document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.order_number} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
-    }
-
-    // ==========================================
-    // MENU & CATEGORIES
-    // ==========================================
-    function populateCatSelects() {
-        let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
-        document.getElementById('menuFormCat').innerHTML = opts; 
-        document.getElementById('menuCatFilter').innerHTML = `<option value="">همه دسته‌ها</option>` + opts;
-    }
-
-    function renderMenu() {
-        const q = document.getElementById('menuSearch').value.trim().toLowerCase();
-        const c = document.getElementById('menuCatFilter').value;
-        const min = parseInt(document.getElementById('menuPriceMin').value) || 0;
-        const max = parseInt(document.getElementById('menuPriceMax').value) || Infinity;
-        const filtered = localMenu.filter(it => (it.name.toLowerCase().includes(q)) && (c ? it.cat === c : true) && (it.price >= min && it.price <= max));
-        document.getElementById('menuList').innerHTML = filtered.length ? filtered.map(it => `
-            <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-                <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
-                <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
-            </div>
-        `).join('') : '<div class="empty-state">آیتمی یافت نشد</div>';
-    }
-    
-    ['menuSearch','menuCatFilter','menuPriceMin','menuPriceMax'].forEach(id => { document.getElementById(id).addEventListener('input', renderMenu); });
-    document.getElementById('clearMenuFilter').addEventListener('click', () => { document.getElementById('menuSearch').value = ''; document.getElementById('menuCatFilter').value = ''; document.getElementById('menuPriceMin').value = ''; document.getElementById('menuPriceMax').value = ''; renderMenu(); });
-    document.getElementById('addMenuItemBtn').addEventListener('click', () => { document.getElementById('menuFormId').value = ''; document.getElementById('menuFormName').value = ''; document.getElementById('menuFormPrice').value = ''; new bootstrap.Modal(document.getElementById('menuModal')).show(); });
-
-    window.editMenu = function(id) {
-        const item = localMenu.find(i => i.id === id); if(!item) return;
-        document.getElementById('menuFormId').value = id; document.getElementById('menuFormName').value = item.name; document.getElementById('menuFormPrice').value = item.price; document.getElementById('menuFormCat').value = item.cat || '';
-        new bootstrap.Modal(document.getElementById('menuModal')).show();
-    }
-    window.deleteMenu = async function(id) { 
-        if(!confirm('حذف شود؟')) return; 
-        uiLoading(true);
-        try {
-            const { error } = await supa.from('menu_items').delete().eq('id', id);
-            if (error) throw error;
-            toast('آیتم با موفقیت حذف شد');
-        } catch (err) {
-            console.error('Delete menu error:', err);
-            toast('خطا در حذف آیتم', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    }
-    document.getElementById('menuFormSave').addEventListener('click', async () => {
-        const id = document.getElementById('menuFormId').value; 
-        const name = document.getElementById('menuFormName').value.trim(); 
-        const price = parseInt(document.getElementById('menuFormPrice').value); 
-        const cat = document.getElementById('menuFormCat').value;
-        if(!name || isNaN(price) || price < 0) { toast('نام یا قیمت نامعتبر است', 'danger'); return; }
-        uiLoading(true);
-        try {
-            let error;
-            if(id) {
-                ({ error } = await supa.from('menu_items').update({ name, price, cat }).eq('id', id));
-            } else {
-                ({ error } = await supa.from('menu_items').insert([{ name, price, cat }]));
-            }
-            if (error) throw error;
-            toast('اطلاعات ذخیره شد');
-            bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
-        } catch (err) {
-            console.error('Save menu error:', err);
-            toast('خطا در ذخیره‌سازی آیتم', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    });
-
-    function renderCats() { document.getElementById('catManageList').innerHTML = localCats.map(c => `<li class="list-group-item d-flex justify-content-between align-items-center p-2">${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>`).join(''); }
-    document.getElementById('addCatBtn').addEventListener('click', async () => { 
-        const name = document.getElementById('newCatName').value.trim(); 
-        if(!name) { toast('نام دسته الزامی است', 'danger'); return; } 
-        uiLoading(true);
-        try {
-            const { error } = await supa.from('categories').insert([{name}]);
-            if (error) throw error;
-            document.getElementById('newCatName').value = '';
-            toast('دسته‌بندی افزوده شد');
-        } catch (err) {
-            console.error('Add cat error:', err);
-            toast('خطا در ثبت دسته', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    });
-    window.deleteCat = async function(id) { 
-        if(!confirm('حذف دسته؟')) return; 
-        uiLoading(true);
-        try {
-            const { error } = await supa.from('categories').delete().eq('id', id);
-            if (error) throw error;
-            toast('دسته با موفقیت حذف شد');
-        } catch (err) {
-            console.error('Delete cat error:', err);
-            toast('خطا در حذف دسته‌بندی', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    }
-
-    // ==========================================
-    // CART & ORDERS
-    // ==========================================
-    const searchInput = document.getElementById('searchItem'); const searchRes = document.getElementById('itemSearchResults');
-    searchInput.addEventListener('input', (e) => {
-        const q = e.target.value.trim().toLowerCase(); if(!q) { searchRes.style.display = 'none'; return; }
-        const items = localMenu.filter(i => i.name.toLowerCase().includes(q));
-        searchRes.innerHTML = items.length ? items.map(i => `<div class="p-2 border-bottom d-flex justify-content-between" style="cursor:pointer;" onclick="addToCart(${i.id})"><span>${escapeHtml(i.name)}</span><span class="text-primary fw-bold">${formatPrice(i.price)}</span></div>`).join('') : '<div class="p-2 text-muted small">یافت نشد</div>';
-        searchRes.style.display = 'block';
-    });
-    document.addEventListener('click', (e) => { if(!searchRes.contains(e.target) && e.target !== searchInput) searchRes.style.display = 'none'; });
-
-    window.addToCart = function(id) {
-        const item = localMenu.find(i => i.id === id); if(!item) return;
-        const exist = cart.find(c => c.id === id); if(exist) exist.qty++; else cart.push({id: item.id, name: item.name, price: item.price, qty: 1});
-        searchInput.value = ''; searchRes.style.display = 'none'; renderCart(); toast('اضافه شد', 'success');
-    }
-
-    function renderCart() {
-        const cdiv = document.getElementById('cartItems'); let total = 0;
-        if(!cart.length) cdiv.innerHTML = '<div class="empty-state">سبد خرید خالی است</div>';
-        else cdiv.innerHTML = cart.map((c,i) => {
-            total += c.price * c.qty;
-            return `<div class="d-flex align-items-center justify-content-between border-bottom py-2"><div style="flex:1;"><strong>${escapeHtml(c.name)}</strong></div><div class="d-flex align-items-center gap-2 me-3"><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, -1)">-</button><span class="fw-bold" style="min-width:20px;text-align:center">${c.qty}</span><button class="btn btn-sm btn-light border" onclick="updateQty(${i}, 1)">+</button></div><div class="text-primary fw-bold me-2" style="min-width:80px;text-align:left">${formatPrice(c.price * c.qty)}</div><button class="btn btn-sm text-danger" onclick="cart.splice(${i},1);renderCart()"><i class="fas fa-trash"></i></button></div>`;
-        }).join('');
-        document.getElementById('cartTotal').textContent = formatPrice(total); document.getElementById('cartCount').textContent = cart.reduce((s,c)=>s+c.qty, 0);
-    }
-    window.updateQty = function(idx, val) { cart[idx].qty += val; if(cart[idx].qty <= 0) cart.splice(idx, 1); renderCart(); };
-
-    document.getElementById('submitOrderBtn').addEventListener('click', async () => {
-        if(!cart.length) { toast('سبد خالی است', 'danger'); return; }
-        const custName = document.getElementById('customerName').value.trim();
-        if(!custName) { toast('نام مشتری الزامی است', 'danger'); return; }
-        uiLoading(true);
-        try {
-            const total = cart.reduce((s,c) => s + c.price * c.qty, 0);
-            await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
-            const { error } = await supa.from('orders').insert([{ 
-                customer_name: custName, 
-                items: cart, 
-                total: total, 
-                status: 'معلق', 
-                created_by: (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email 
-            }]);
-            if(error) throw error;
-            cart = []; 
-            document.getElementById('customerName').value = ''; 
-            renderCart(); 
-            toast('ثبت شد'); 
-            document.querySelector('[data-tab="settle"]').click();
-        } catch (err) {
-            console.error('Submit order error:', err);
-            toast('خطا در ثبت سفارش', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    });
-
-    // ==========================================
-    // SETTLE & HISTORY
-    // ==========================================
-    document.getElementById('settleSearch').addEventListener('input', renderOrders);
-    function renderOrders() {
-        const sq = document.getElementById('settleSearch').value.trim().toLowerCase();
-        let pending = localOrders.filter(o => o.status === 'معلق');
-        if (sq) pending = pending.filter(o => (o.customer_name || '').toLowerCase().includes(sq));
-
-        const groups = {};
-        pending.forEach(o => {
-            const c = o.customer_name || 'بدون نام'; if(!groups[c]) groups[c] = { ids: [], orders: [], total: 0, itemsMap: {}, createdBy: o.created_by };
-            groups[c].ids.push(o.id); groups[c].orders.push(o.order_number); groups[c].total += (o.total || 0);
-            (o.items || []).forEach(it => { groups[c].itemsMap[it.name] = (groups[c].itemsMap[it.name]||0) + it.qty; });
-        });
-
-        const listDiv = document.getElementById('pendingOrdersList'); const keys = Object.keys(groups);
-        if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">سفارش بازی نیست</div>'; return; }
-
-        listDiv.innerHTML = keys.map(k => {
-            const g = groups[k]; 
-            const itemsStr = Object.entries(g.itemsMap).map(e => `${escapeHtml(e[0])}(${e[1]})`).join('، '); 
-            const orderNums = g.orders.map(n => `#${n}`).join(' و ');
-            const idsJson = escapeHtml(JSON.stringify(g.ids));
-            return `<div class="border-bottom py-3 d-flex flex-wrap align-items-center justify-content-between"><div><strong>${escapeHtml(k)}</strong> ${g.ids.length > 1 ? `<span class="badge bg-warning text-dark ms-2 rounded-pill">${g.ids.length} فاکتور مجزا</span>` : ''} <span class="text-primary ms-2 fw-bold fs-6">${formatPrice(g.total)} تومان</span><div class="small mt-1 text-muted">${itemsStr}</div><div class="order-meta"><i class="fas fa-hashtag"></i> سفارشات: ${orderNums} | <i class="fas fa-user-edit"></i> ${escapeHtml(g.createdBy)}</div></div><div class="mt-2 mt-sm-0 d-flex gap-1"><button class="btn btn-sm btn-success-custom" onclick='settleGroup(${idsJson}, "نقدی")'>نقدی</button><button class="btn btn-sm btn-primary-custom" onclick='settleGroup(${idsJson}, "کارت")'>کارت</button><button class="btn btn-sm btn-danger" onclick='settleGroup(${idsJson}, "لغو")'>لغو</button></div></div>`;
-        }).join('');
-    }
-    window.settleGroup = async function(idsArray, method) { 
-        if(method === 'لغو' && !confirm('لغو شود؟')) return; 
-        uiLoading(true);
-        try {
-            const { error } = await supa.from('orders').update({ status: method }).in('id', idsArray);
-            if (error) throw error;
-            toast('تسویه حساب انجام شد');
-        } catch (err) {
-            console.error('Settle group error:', err);
-            toast('خطا در تسویه حساب', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    };
-
-    function renderHistory() {
-        const payF = document.getElementById('histPayFilter').value; 
-        const userF = document.getElementById('histUserFilter').value; 
-        const dateF = document.getElementById('histDateFilter').value; 
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-
-        let filtered = localOrders.filter(o => o.status !== 'معلق');
-        if(payF) filtered = filtered.filter(o => o.status === payF);
-        if(userF) filtered = filtered.filter(o => o.created_by === userF);
-        if(dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
-
-        document.getElementById('historyList').innerHTML = filtered.length ? filtered.map(o => {
-            const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', {hour: '2-digit', minute:'2-digit'});
-            return `<div class="border-bottom py-2"><div class="d-flex justify-content-between mb-1"><span class="fw-bold">#${o.order_number} ${escapeHtml(o.customer_name)}</span><span class="text-primary fw-bold">${formatPrice(o.total)}</span></div><div class="d-flex justify-content-between align-items-center"><div class="order-meta m-0"><i class="fas fa-clock"></i> ${timeStr} | <i class="fas fa-user"></i> ${escapeHtml(o.created_by)}</div><span class="badge ${o.status==='نقدی'?'bg-success':o.status==='کارت'?'bg-info':'bg-danger'}">${escapeHtml(o.status)}</span></div></div>`;
-        }).join('') : '<div class="empty-state">موردی یافت نشد</div>';
-    }
-    ['histPayFilter','histUserFilter','histDateFilter'].forEach(id => { document.getElementById(id).addEventListener('change', renderHistory); });
-
-    // ==========================================
-    // REPORTS (ADVANCED)
-    // ==========================================
-    window.setRepDate = function(mode) {
-        const dFrom = document.getElementById('reportDateFrom'); const dTo = document.getElementById('reportDateTo');
-        const now = new Date(); 
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const todayStr = `${year}-${month}-${day}`;
-
-        if(mode === 'today') { dFrom.value = todayStr; dTo.value = todayStr; }
-        else if(mode === 'all') { dFrom.value = ''; dTo.value = ''; }
-        else {
-            const limit = new Date(now);
-            if(mode==='3days') limit.setDate(limit.getDate() - 2);
-            if(mode==='week') limit.setDate(limit.getDate() - 6);
-            if(mode==='month') limit.setDate(limit.getDate() - 29);
-            const lYear = limit.getFullYear();
-            const lMonth = String(limit.getMonth() + 1).padStart(2, '0');
-            const lDay = String(limit.getDate()).padStart(2, '0');
-            dFrom.value = `${lYear}-${lMonth}-${lDay}`; 
-            dTo.value = todayStr;
-        }
-        document.getElementById('applyReportFilter').click();
-    };
-
-    document.getElementById('applyReportFilter').addEventListener('click', () => {
-        const fromD = document.getElementById('reportDateFrom').value; 
-        const toD = document.getElementById('reportDateTo').value; 
-        const userF = document.getElementById('reportUserFilter').value;
-        let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
-        if (fromD) {
-            const fromDate = new Date(fromD + 'T00:00:00');
-            orders = orders.filter(o => new Date(o.created_at) >= fromDate);
-        }
-        if (toD) {
-            const toDate = new Date(toD + 'T23:59:59.999');
-            orders = orders.filter(o => new Date(o.created_at) <= toDate);
-        }
-        if (userF) orders = orders.filter(o => o.created_by === userF);
-        
-        const totalRev = orders.reduce((s,o)=>s+o.total,0);
-        const totalCash = orders.filter(o=>o.status==='نقدی').reduce((s,o)=>s+o.total,0);
-        const totalCard = orders.filter(o=>o.status==='کارت').reduce((s,o)=>s+o.total,0);
-        
-        // Detailed Items Aggregation
-        let itemsMap = {}; let totalItemsCount = 0;
-        orders.forEach(o => {
-            (o.items||[]).forEach(i => {
-                if(!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
-                itemsMap[i.name].qty += i.qty; itemsMap[i.name].revenue += (i.qty * i.price);
-                totalItemsCount += i.qty;
-            });
-        });
-        const sortedItems = Object.entries(itemsMap).sort((a,b) => b[1].qty - a[1].qty);
-        
-        let reportHTML = `
-            <div id="printableReport" class="alert alert-light border shadow-sm mt-3" style="direction:rtl; text-align:right;">
-                <h5 class="text-center text-primary mb-3 fw-bold">آمار دقیق فروش</h5>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>فاکتورهای صادر شده:</span> <strong>${orders.length} عدد</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع اقلام فروخته شده:</span> <strong>${totalItemsCount} کالا</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع نقدی:</span> <strong class="text-success">${formatPrice(totalCash)} تومان</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع کارتخوان:</span> <strong class="text-info">${formatPrice(totalCard)} تومان</strong></div>
-                <div class="d-flex justify-content-between mt-3 fs-5 border-bottom pb-2 mb-3"><span>کل درآمد:</span> <strong class="text-primary">${formatPrice(totalRev)} تومان</strong></div>
-                
-                <h6 class="fw-bold mt-2 text-dark"><i class="fas fa-list"></i> ریز اقلام فروخته شده (از بیشترین به کمترین):</h6>
-                <ul class="list-group list-group-flush small">
-                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(i[0])}</span> <span><span class="fw-bold text-dark">${i[1].qty}</span> عدد (<span class="text-muted">${formatPrice(i[1].revenue)} ت</span>)</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">اقلامی فروخته نشده</li>'}
-                </ul>
-            </div>`;
-            
-        document.getElementById('salesReportContent').innerHTML = reportHTML;
-        document.getElementById('reportActionBtns').style.setProperty('display', 'flex', 'important');
-    });
-
-    window.copyReportText = function() {
-        const el = document.getElementById('printableReport');
-        if(!el) return;
-        const text = el.innerText.replace(/\n\s*\n/g, '\n');
-        navigator.clipboard.writeText(text).then(()=>toast('متن گزارش کپی شد')).catch(()=>toast('خطا در کپی', 'danger'));
-    };
-
-    window.printReportHTML = function() {
-        const el = document.getElementById('printableReport'); if(!el) return;
-        const pr = window.open('', '', 'height=600,width=800');
-        pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش</title><style>body{font-family:Tahoma,Arial;font-size:14px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
-        pr.document.close(); pr.focus(); setTimeout(()=>{pr.print(); pr.close();}, 500);
-    };
-
-    // ==========================================
-    // SYSTEM & CUSTOMERS
-    // ==========================================
-    function renderUsers() { document.getElementById('userList').innerHTML = localProfiles.map(u => `<div class="d-flex justify-content-between align-items-center border-bottom py-2"><div><strong>${escapeHtml(u.full_name || 'بدون نام')}</strong> <span class="badge ${u.role==='manager'?'bg-primary':'bg-secondary'} ms-1">${u.role==='manager'?'مدیر':'کارمند'}</span><div class="text-muted small">ایمیل: ${escapeHtml(u.email)}</div></div></div>`).join('') || '<div class="empty-state">دیتای پرسنل لود نشد</div>'; }
-
-    document.getElementById('custSearch').addEventListener('input', renderCustomersList);
-    function renderCustomersList() {
-        const sq = document.getElementById('custSearch').value.trim().toLowerCase();
-        
-        // Calculate dynamic stats from localOrders
-        let stats = {};
-        localOrders.forEach(o => {
-            if(o.status !== 'لغو' && o.status !== 'معلق') {
-                if(!stats[o.customer_name]) stats[o.customer_name] = { count: 0, spent: 0 };
-                stats[o.customer_name].count++; stats[o.customer_name].spent += (o.total || 0);
-            }
-        });
-
-        let filtered = localCustomers;
-        if(sq) filtered = filtered.filter(c => c.full_name.toLowerCase().includes(sq));
-
-        document.getElementById('customerListTable').innerHTML = filtered.length ? filtered.map(c => {
-            const s = stats[c.full_name] || { count: 0, spent: 0 };
-            return `<div class="border-bottom py-3 d-flex justify-content-between align-items-center">
-                <div><strong class="fs-6 text-dark">${escapeHtml(c.full_name)}</strong><div class="small mt-1 text-muted"><i class="fas fa-shopping-bag"></i> ${s.count} سفارش صادر شده<br><i class="fas fa-coins"></i> ${formatPrice(s.spent)} تومان خرید</div></div>
-                <div><button class="btn btn-sm btn-outline-primary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش نام</button></div>
-            </div>`;
-        }).join('') : '<div class="empty-state">مشتری یافت نشد</div>';
-    }
-
-    window.editCustomer = async function(oldName) {
-        const newName = prompt('نام جدید مشتری را وارد کنید:', oldName);
-        if(!newName || newName.trim() === '' || newName === oldName) return;
-        const cleanNewName = newName.trim();
-        uiLoading(true);
-        try {
-            // Ensure new name doesn't exist
-            const check = localCustomers.find(c => c.full_name === cleanNewName);
-            if(check) { toast('این نام از قبل وجود دارد', 'danger'); return; }
-            
-            // Update both tables
-            const { error: err1 } = await supa.from('customers').update({ full_name: cleanNewName }).eq('full_name', oldName);
-            if (err1) throw err1;
-            const { error: err2 } = await supa.from('orders').update({ customer_name: cleanNewName }).eq('customer_name', oldName);
-            if (err2) throw err2;
-            
-            toast('مشخصات مشتری با موفقیت ویرایش شد');
-        } catch (err) {
-            console.error('Edit customer error:', err);
-            toast('خطا در ویرایش اطلاعات مشتری', 'danger');
-        } finally {
-            uiLoading(false);
-        }
-    };
-
-    document.addEventListener('DOMContentLoaded', initApp);
-</script>
+<script src="js/config.js"></script>
+<script src="js/timers.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
