@@ -2,6 +2,47 @@
 // CAFE CLOVER - APPLICATION LOGIC (APP.JS)
 // ==========================================
 
+// CUSTOM BOOTSTRAP MODALS (REPLACING BROWSER CONFIRM & PROMPT)
+function showConfirmModal(title, text) {
+    return new Promise((resolve) => {
+        document.getElementById('confirmModalTitle').textContent = title || 'تأیید عملیات';
+        document.getElementById('confirmModalBody').textContent = text || 'آیا مطمئن هستید؟';
+        const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        const actionBtn = document.getElementById('confirmModalActionBtn');
+        
+        const onConfirm = () => {
+            actionBtn.removeEventListener('click', onConfirm);
+            modal.hide();
+            resolve(true);
+        };
+        
+        actionBtn.onclick = onConfirm;
+        modal.show();
+    });
+}
+
+function showInputModal(title, label, defaultValue = '') {
+    return new Promise((resolve) => {
+        document.getElementById('inputModalTitle').textContent = title || 'ورود اطلاعات';
+        document.getElementById('inputModalLabel').textContent = label || 'مقدار:';
+        const inputEl = document.getElementById('inputModalValue');
+        inputEl.value = defaultValue;
+        
+        const modal = new bootstrap.Modal(document.getElementById('inputModal'));
+        const actionBtn = document.getElementById('inputModalActionBtn');
+        
+        const onConfirm = () => {
+            const val = inputEl.value;
+            actionBtn.removeEventListener('click', onConfirm);
+            modal.hide();
+            resolve(val ? val.trim() : null);
+        };
+        
+        actionBtn.onclick = onConfirm;
+        modal.show();
+    });
+}
+
 // 1. INITIALIZATION & AUTH
 async function initApp() {
     uiLoading(true);
@@ -287,7 +328,7 @@ function renderDashboard() {
     document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 }
 
-// 5. MENU & CATEGORIES MANAGEMENT (CLEAN INSERT WITHOUT SCHEMA ERRORS)
+// 5. MENU & CATEGORIES MANAGEMENT (WITH DYNAMIC CATEGORY TYPE)
 function populateCatSelects() {
     let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     document.getElementById('menuFormCat').innerHTML = opts;
@@ -355,7 +396,9 @@ window.editMenu = function(id) {
 };
 
 window.deleteMenu = async function(id) {
-    if (!confirm('حذف شود؟')) return;
+    const confirmDelete = await showConfirmModal('حذف منو/دستگاه', 'آیا از حذف این آیتم اطمینان دارید؟');
+    if (!confirmDelete) return;
+
     uiLoading(true);
     try {
         const item = localMenu.find(i => i.id === id);
@@ -363,6 +406,8 @@ window.deleteMenu = async function(id) {
         if (error) throw error;
         toast('با موفقیت حذف شد');
         logSystemAction('حذف منو/دستگاه', `حذف ${item ? item.name : id}`);
+        await loadInitialData();
+        renderMenu();
     } catch (err) {
         console.error('Delete menu error:', err);
         toast('خطا در حذف', 'danger');
@@ -396,6 +441,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
         toast('اطلاعات با موفقیت ذخیره شد');
         logSystemAction('ذخیره منو/دستگاه', `${isTimer ? 'دستگاه' : 'آیتم'} ${name} ذخیره شد`);
         bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
+        await loadInitialData();
+        renderMenu();
     } catch (err) {
         console.error('Save menu error:', err);
         toast('خطا در ذخیره‌سازی', 'danger');
@@ -405,8 +452,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
 });
 
 function renderCats() {
-    const staticCats = localCats.filter(c => c.is_timer !== true);
-    const timerCats = localCats.filter(c => c.is_timer === true);
+    const staticCats = localCats.filter(c => c.is_timer !== true && c.type !== 'timer');
+    const timerCats = localCats.filter(c => c.is_timer === true || c.type === 'timer');
 
     document.getElementById('catStaticList').innerHTML = staticCats.length ? staticCats.map(c => `
         <li class="list-group-item d-flex justify-content-between align-items-center p-2">
@@ -429,17 +476,25 @@ function renderCats() {
     `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی تایمری وجود ندارد</li>';
 }
 
-// SAFE CATEGORY INSERTION (ONLY SEND { name })
+// SAFE & REALTIME CATEGORY ADDITION
 document.getElementById('addCatStaticBtn').addEventListener('click', async () => {
     const name = document.getElementById('newCatStaticName').value.trim();
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').insert([{ name }]);
+        let payload = { name, is_timer: false, type: 'static' };
+        let { error } = await supa.from('categories').insert([payload]);
+        if (error) {
+            // Fallback if type column is missing in DB schema
+            ({ error } = await supa.from('categories').insert([{ name }]));
+        }
         if (error) throw error;
+
         document.getElementById('newCatStaticName').value = '';
         toast('دسته‌بندی ثابت‌ها افزوده شد');
         logSystemAction('افزودن دسته‌بندی', `دسته ثابت ${name} افزوده شد`);
+        await loadInitialData();
+        renderCats();
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
@@ -449,35 +504,49 @@ document.getElementById('addCatTimerBtn').addEventListener('click', async () => 
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').insert([{ name }]);
+        let payload = { name, is_timer: true, type: 'timer' };
+        let { error } = await supa.from('categories').insert([payload]);
+        if (error) {
+            // Fallback if type column is missing in DB schema
+            ({ error } = await supa.from('categories').insert([{ name: `${name} (تایمری)` }]));
+        }
         if (error) throw error;
+
         document.getElementById('newCatTimerName').value = '';
         toast('دسته‌بندی تایمری‌ها افزوده شد');
         logSystemAction('افزودن دسته‌بندی', `دسته تایمری ${name} افزوده شد`);
+        await loadInitialData();
+        renderCats();
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
 
 window.editCat = async function(id, oldName) {
-    const newName = prompt('نام جدید دسته‌بندی را وارد کنید:', oldName);
-    if (!newName || newName.trim() === '' || newName === oldName) return;
+    const newName = await showInputModal('ویرایش دسته‌بندی', 'نام جدید دسته‌بندی را وارد کنید:', oldName);
+    if (!newName || newName === oldName) return;
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').update({ name: newName.trim() }).eq('id', id);
+        const { error } = await supa.from('categories').update({ name: newName }).eq('id', id);
         if (error) throw error;
         toast('دسته‌بندی با موفقیت ویرایش شد');
-        logSystemAction('ویرایش دسته‌بندی', `تغییر نام دسته از ${oldName} به ${newName.trim()}`);
+        logSystemAction('ویرایش دسته‌بندی', `تغییر نام دسته از ${oldName} به ${newName}`);
+        await loadInitialData();
+        renderCats();
     } catch (err) { console.error('Edit cat error:', err); toast('خطا در ویرایش دسته', 'danger'); }
     finally { uiLoading(false); }
 };
 
 window.deleteCat = async function(id) {
-    if (!confirm('حذف دسته؟')) return;
+    const confirmDelete = await showConfirmModal('حذف دسته‌بندی', 'آیا از حذف این دسته‌بندی اطمینان دارید؟');
+    if (!confirmDelete) return;
+
     uiLoading(true);
     try {
         const { error } = await supa.from('categories').delete().eq('id', id);
         if (error) throw error;
         toast('دسته حذف شد');
+        await loadInitialData();
+        renderCats();
     } catch (err) { console.error('Delete cat error:', err); toast('خطا در حذف دسته', 'danger'); }
     finally { uiLoading(false); }
 };
@@ -570,6 +639,7 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
         renderCart();
         toast('سفارش بوفه ثبت شد');
         logSystemAction('ثبت سفارش بوفه', `ثبت سفارش برای ${custName} به مبلغ ${formatPrice(total)} تومان`);
+        await loadInitialData();
         document.querySelector('[data-tab="settle"]').click();
     } catch (err) {
         console.error('Submit order error:', err);
@@ -632,44 +702,49 @@ function updateLiveDeviceCardsUI() {
     }).join('');
 }
 
-window.addPlayerClick = function(deviceId) {
-    const custName = prompt('نام بازیکن/مشتری را وارد کنید:');
-    if (!custName || !custName.trim()) return;
-    if (startDevicePlayer(deviceId, custName.trim())) {
+window.addPlayerClick = async function(deviceId) {
+    const custName = await showInputModal('افزودن بازیکن به دستگاه', 'نام بازیکن / مشتری را وارد کنید:');
+    if (!custName) return;
+    if (startDevicePlayer(deviceId, custName)) {
         toast(`بازیکن ${custName} روی دستگاه شروع به بازی کرد`);
         updateLiveDeviceCardsUI();
+        await loadInitialData();
     }
 };
 
-window.stopPlayerClick = function(deviceId, customerName) {
-    if (!confirm(`آیا بازی ${customerName} پایان یابد؟`)) return;
+window.stopPlayerClick = async function(deviceId, customerName) {
+    const confirmStop = await showConfirmModal('پایان بازی', `آیا بازی ${customerName} پایان یابد؟`);
+    if (!confirmStop) return;
     const ended = stopDevicePlayer(deviceId, customerName);
     if (ended) {
         toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
         updateLiveDeviceCardsUI();
+        await loadInitialData();
         refreshOrders();
     }
 };
 
-window.transferPlayerClick = function(fromDeviceId) {
+window.transferPlayerClick = async function(fromDeviceId) {
     const activePlayers = (deviceSessions[fromDeviceId] || []).map(p => p.customer_name);
     if (!activePlayers.length) return;
-    const selectedPlayer = prompt(`کدام بازیکن منتقل شود؟ (${activePlayers.join('، ')})`, activePlayers[0]);
-    if (!selectedPlayer || !activePlayers.includes(selectedPlayer.trim())) return;
+    const selectedPlayer = await showInputModal('انتقال بازیکن', `نام بازیکن منتقل‌شونده: (${activePlayers.join('، ')})`, activePlayers[0]);
+    if (!selectedPlayer || !activePlayers.includes(selectedPlayer)) return;
 
     const otherDevices = localMenu.filter(m => m.is_timer && m.id !== fromDeviceId);
     if (!otherDevices.length) { toast('دستگاه تایمری دیگری وجود ندارد', 'warning'); return; }
     
-    const deviceNames = otherDevices.map((d, idx) => `${idx + 1}. ${d.name}`).join('\n');
-    const targetIdx = prompt(`دستگاه مقصد را انتخاب کنید:\n${deviceNames}`);
-    const chosen = otherDevices[parseInt(targetIdx) - 1];
+    const deviceNames = otherDevices.map((d, idx) => `${idx + 1}. ${d.name}`).join(' | ');
+    const targetIdxStr = await showInputModal('انتخاب دستگاه مقصد', `شماره دستگاه مقصد را وارد کنید:\n${deviceNames}`, '1');
+    const targetIdx = parseInt(targetIdxStr);
+    const chosen = otherDevices[targetIdx - 1];
     if (chosen) {
-        transferDevicePlayer(fromDeviceId, chosen.id, selectedPlayer.trim());
+        transferDevicePlayer(fromDeviceId, chosen.id, selectedPlayer);
         updateLiveDeviceCardsUI();
+        await loadInitialData();
     }
 };
 
-// 7. SETTLEMENT TAB (REVERTED TO STANDARD PENDING CARDS WITHOUT REGISTERED BY LINE)
+// 7. SETTLEMENT TAB
 document.getElementById('settleSearch').addEventListener('input', renderSettlement);
 
 function renderSettlement() {
@@ -743,7 +818,10 @@ function renderSettlement() {
 }
 
 window.settleCustomerGroup = async function(idsArray, method, customerName) {
-    if (method === 'لغو' && !confirm(`آیا تمامی سفارشات ${customerName} لغو شوند؟`)) return;
+    if (method === 'لغو') {
+        const confirmCancel = await showConfirmModal('لغو سفارشات', `آیا تمامی سفارشات ${customerName} لغو شوند؟`);
+        if (!confirmCancel) return;
+    }
     uiLoading(true);
     try {
         const settledBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;
@@ -754,6 +832,7 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
 
         toast(`تسویه حساب ${customerName} با موفقیت ثبت شد (${method})`);
         logSystemAction('تسویه حساب', `تسویه فاکتور ${customerName} به روش ${method} توسط ${settledBy}`);
+        await loadInitialData();
         refreshOrders();
     } catch (err) {
         console.error('Settle group error:', err);
@@ -763,7 +842,7 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
     }
 };
 
-// 8. HISTORY (WITH UPDATED DROPDOWN FILTERS FOR TODAY, 3DAYS, WEEK, ALL)
+// 8. HISTORY
 window.exportHistoryCSV = function() {
     if (!localOrders || !localOrders.length) {
         toast('تاریخچه‌ای برای دانلود وجود ندارد', 'warning');
@@ -870,7 +949,7 @@ function renderHistory() {
     if (el) el.addEventListener('change', renderHistory);
 });
 
-// 9. REPORTS (3 SUB-TABS: SALES, DEVICES, LOGS)
+// 9. REPORTS
 window.setRepDate = function(mode, btnEl) {
     if (btnEl) {
         document.querySelectorAll('#page-reports .quick-date-btn').forEach(b => b.classList.remove('active'));
@@ -1151,21 +1230,22 @@ window.viewCustomerStats = function(custName) {
 };
 
 window.editCustomer = async function(oldName) {
-    const newName = prompt('نام جدید مشتری را وارد کنید:', oldName);
-    if (!newName || newName.trim() === '' || newName === oldName) return;
-    const cleanNewName = newName.trim();
+    const newName = await showInputModal('ویرایش نام مشتری', 'نام جدید مشتری را وارد کنید:', oldName);
+    if (!newName || newName === oldName) return;
     uiLoading(true);
     try {
-        const check = localCustomers.find(c => c.full_name === cleanNewName);
+        const check = localCustomers.find(c => c.full_name === newName);
         if (check) { toast('این نام از قبل وجود دارد', 'danger'); return; }
 
-        const { error: err1 } = await supa.from('customers').update({ full_name: cleanNewName }).eq('full_name', oldName);
+        const { error: err1 } = await supa.from('customers').update({ full_name: newName }).eq('full_name', oldName);
         if (err1) throw err1;
-        const { error: err2 } = await supa.from('orders').update({ customer_name: cleanNewName }).eq('customer_name', oldName);
+        const { error: err2 } = await supa.from('orders').update({ customer_name: newName }).eq('customer_name', oldName);
         if (err2) throw err2;
 
         toast('مشخصات مشتری با موفقیت ویرایش شد');
-        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${cleanNewName}`);
+        logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${newName}`);
+        await loadInitialData();
+        renderCustomersList();
     } catch (err) {
         console.error('Edit customer error:', err);
         toast('خطا در ویرایش اطلاعات مشتری', 'danger');
