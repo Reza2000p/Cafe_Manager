@@ -142,7 +142,6 @@ async function loadInitialData() {
         localCustomers = custRes.data || [];
         localLogs = logsRes.data || [];
 
-        // Parse Active Device Sessions from Supabase so ALL phones/computers see the exact same active players
         if (activeSessionsRes && activeSessionsRes.data) {
             parseSupabaseActiveSessions(activeSessionsRes.data);
         }
@@ -155,75 +154,91 @@ async function loadInitialData() {
     }
 }
 
+// SILENT REFRESH DATA (NO UI SPINNER FLICKER)
+let isRefreshingSilently = false;
+async function silentRefreshData() {
+    if (isRefreshingSilently || !currentUser) return;
+    isRefreshingSilently = true;
+    try {
+        const [ordersRes, menuRes, catsRes, activeSessionsRes] = await Promise.all([
+            supa.from('orders').select('*').order('created_at', { ascending: false }),
+            supa.from('menu_items').select('*'),
+            supa.from('categories').select('*'),
+            supa.from('active_timer_sessions').select('*')
+        ]);
+
+        if (ordersRes && ordersRes.data) localOrders = ordersRes.data;
+        if (menuRes && menuRes.data) localMenu = menuRes.data;
+        if (catsRes && catsRes.data) localCats = catsRes.data;
+        if (activeSessionsRes && activeSessionsRes.data) parseSupabaseActiveSessions(activeSessionsRes.data);
+
+        // SILENTLY RE-RENDER ACTIVE VIEW
+        const activePage = document.querySelector('.page.active')?.id;
+        if (activePage === 'page-orders') {
+            const activeOrderTab = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
+            if (activeOrderTab === 'timers') updateLiveDeviceCardsUI();
+            if (activeOrderTab === 'settle') renderSettlement();
+            if (activeOrderTab === 'history') renderHistory();
+        } else if (activePage === 'page-dashboard') {
+            renderDashboard();
+        } else if (activePage === 'page-menu') {
+            renderMenu();
+        }
+    } catch(e) {
+    } finally {
+        isRefreshingSilently = false;
+    }
+}
+
+// BROADCAST SIGNAL TO ALL CONNECTED CLIENTS
+function broadcastGlobalSync() {
+    if (supa) {
+        try {
+            supa.channel('global-cafe-channel').send({
+                type: 'broadcast',
+                event: 'sync_all'
+            });
+        } catch(e){}
+    }
+}
+
 function initRealtime() {
     if (!supa) return;
     
-    // DB Mutations Listener (Cross-Device Realtime Sync for Orders, Menu, Cats, Customers & Active Sessions)
-    supa.channel('public-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async payload => { 
-            await loadInitialData();
-            refreshOrders(); 
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, async payload => { 
-            await loadInitialData();
-            refreshMenu(); 
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, async payload => { 
-            await loadInitialData();
-            refreshCats(); 
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, async payload => { 
-            await loadInitialData();
-            refreshCustomers(); 
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'active_timer_sessions' }, async payload => { 
-            const { data } = await supa.from('active_timer_sessions').select('*');
-            if (data) {
-                parseSupabaseActiveSessions(data);
-                updateLiveDeviceCardsUI();
-            }
-        })
-        .subscribe();
+    const channel = supa.channel('global-cafe-channel');
+
+    // 1. Broadcast Listener (Fires INSTANTLY across all devices and phones)
+    channel.on('broadcast', { event: 'sync_all' }, async () => {
+        await silentRefreshData();
+    });
+
+    // 2. Postgres DB Changes Listener
+    channel.on('postgres_changes', { event: '*', schema: 'public' }, async () => {
+        await silentRefreshData();
+    });
+
+    channel.subscribe();
+
+    // 3. Fallback Polling (Every 3 Seconds) for 100% Reliability on Shaky Mobile Networks
+    setInterval(async () => {
+        await silentRefreshData();
+    }, 3000);
 }
 
 async function refreshOrders() {
-    try {
-        const { data } = await supa.from('orders').select('*').order('created_at', { ascending: false });
-        localOrders = data || [];
-        if (document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
-        if (document.getElementById('page-orders').classList.contains('active')) { 
-            renderOrdersTab(); 
-            renderSettlement();
-            renderHistory(); 
-        }
-        if (document.getElementById('page-system').classList.contains('active')) renderCustomersList();
-    } catch (err) { console.error('Refresh orders error:', err); }
+    await silentRefreshData();
 }
 
 async function refreshMenu() {
-    try {
-        const { data } = await supa.from('menu_items').select('*');
-        localMenu = data || [];
-        if (document.getElementById('page-menu').classList.contains('active')) renderMenu();
-        if (document.getElementById('page-orders').classList.contains('active')) updateLiveDeviceCardsUI();
-    } catch (err) { console.error('Refresh menu error:', err); }
+    await silentRefreshData();
 }
 
 async function refreshCats() {
-    try {
-        const { data } = await supa.from('categories').select('*');
-        localCats = data || [];
-        populateCatSelects();
-        if (document.getElementById('page-menu').classList.contains('active')) renderCats();
-    } catch (err) { console.error('Refresh cats error:', err); }
+    await silentRefreshData();
 }
 
 async function refreshCustomers() {
-    try {
-        const { data } = await supa.from('customers').select('*').order('created_at', { ascending: false });
-        localCustomers = data || [];
-        if (document.getElementById('page-system').classList.contains('active')) renderCustomersList();
-    } catch (err) { console.error('Refresh customers error:', err); }
+    await silentRefreshData();
 }
 
 function populateFilters() {
@@ -464,10 +479,8 @@ window.deleteMenu = async function(id) {
         if (error) throw error;
         toast('با موفقیت حذف شد');
         logSystemAction('حذف منو/دستگاه', `حذف ${item ? item.name : id}`);
-        await loadInitialData();
-        renderMenu();
-        updateLiveDeviceCardsUI();
-        renderDashboard();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) {
         console.error('Delete menu error:', err);
         toast('خطا در حذف', 'danger');
@@ -501,10 +514,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
         toast('اطلاعات با موفقیت ذخیره شد');
         logSystemAction('ذخیره منو/دستگاه', `${isTimer ? 'دستگاه' : 'آیتم'} ${name} ذخیره شد`);
         bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
-        await loadInitialData();
-        renderMenu();
-        updateLiveDeviceCardsUI();
-        renderDashboard();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) {
         console.error('Save menu error:', err);
         toast('خطا در ذخیره‌سازی', 'danger');
@@ -553,8 +564,8 @@ document.getElementById('addCatStaticBtn').addEventListener('click', async () =>
         document.getElementById('newCatStaticName').value = '';
         toast('دسته‌بندی ثابت‌ها افزوده شد');
         logSystemAction('افزودن دسته‌بندی', `دسته ثابت ${name} افزوده شد`);
-        await loadInitialData();
-        renderCats();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
@@ -574,8 +585,8 @@ document.getElementById('addCatTimerBtn').addEventListener('click', async () => 
         document.getElementById('newCatTimerName').value = '';
         toast('دسته‌بندی تایمری‌ها افزوده شد');
         logSystemAction('افزودن دسته‌بندی', `دسته تایمری ${name} افزوده شد`);
-        await loadInitialData();
-        renderCats();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
@@ -589,8 +600,8 @@ window.editCat = async function(id, oldName) {
         if (error) throw error;
         toast('دسته‌بندی با موفقیت ویرایش شد');
         logSystemAction('ویرایش دسته‌بندی', `تغییر نام دسته از ${oldName} به ${newName}`);
-        await loadInitialData();
-        renderCats();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) { console.error('Edit cat error:', err); toast('خطا در ویرایش دسته', 'danger'); }
     finally { uiLoading(false); }
 };
@@ -604,8 +615,8 @@ window.deleteCat = async function(id) {
         const { error } = await supa.from('categories').delete().eq('id', id);
         if (error) throw error;
         toast('دسته حذف شد');
-        await loadInitialData();
-        renderCats();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) { console.error('Delete cat error:', err); toast('خطا در حذف دسته', 'danger'); }
     finally { uiLoading(false); }
 };
@@ -698,9 +709,9 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
         renderCart();
         toast('سفارش بوفه ثبت شد');
         logSystemAction('ثبت سفارش بوفه', `ثبت سفارش برای ${custName} به مبلغ ${formatPrice(total)} تومان`);
-        await loadInitialData();
+        await silentRefreshData();
+        broadcastGlobalSync();
         document.querySelector('[data-tab="settle"]').click();
-        renderSettlement();
     } catch (err) {
         console.error('Submit order error:', err);
         toast('خطا در ثبت سفارش', 'danger');
@@ -807,10 +818,8 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
         toast(`تسویه حساب ${customerName} با موفقیت ثبت شد (${method})`);
         logSystemAction('تسویه حساب', `تسویه فاکتور ${customerName} به روش ${method} توسط ${settledBy}`);
         
-        await loadInitialData();
-        renderSettlement();
-        renderHistory();
-        renderDashboard();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) {
         console.error('Settle group error:', err);
         toast('خطا در تسویه حساب', 'danger');
@@ -1221,9 +1230,8 @@ window.editCustomer = async function(oldName) {
 
         toast('مشخصات مشتری با موفقیت ویرایش شد');
         logSystemAction('ویرایش مشتری', `تغییر نام مشتری از ${oldName} به ${newName}`);
-        await loadInitialData();
-        renderCustomersList();
-        renderSettlement();
+        await silentRefreshData();
+        broadcastGlobalSync();
     } catch (err) {
         console.error('Edit customer error:', err);
         toast('خطا در ویرایش اطلاعات مشتری', 'danger');

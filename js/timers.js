@@ -1,5 +1,5 @@
 // ==========================================
-// TIMER & DEVICE LOGIC ENGINE (SUPABASE REALTIME PERSISTENCE)
+// TIMER & DEVICE LOGIC ENGINE (SUPABASE REALTIME & RACE CONDITION SAFE)
 // ==========================================
 
 // Helper: Check if a player name is currently active on ANY device
@@ -62,6 +62,18 @@ async function startDevicePlayer(deviceId, customerName) {
     if (!deviceId || !customerName || !customerName.trim()) return false;
     const cleanName = customerName.trim();
 
+    // Check with DB directly for double-start race condition
+    if (supa) {
+        try {
+            const { data: dbActive } = await supa.from('active_timer_sessions').select('device_name').ilike('customer_name', cleanName);
+            if (dbActive && dbActive.length > 0) {
+                toast(`مشتری محترم «${escapeHtml(cleanName)}» هم‌اکنون روی دستگاه «${escapeHtml(dbActive[0].device_name)}» در حال بازی است. ثبت همزمان امکان‌پذیر نیست.`, 'warning');
+                if (typeof silentRefreshData === 'function') await silentRefreshData();
+                return false;
+            }
+        } catch(e){}
+    }
+
     const device = localMenu.find(m => m.id === deviceId && m.is_timer);
     if (!device) {
         toast('دستگاه مورد نظر یافت نشد', 'danger');
@@ -74,7 +86,6 @@ async function startDevicePlayer(deviceId, customerName) {
         return false;
     }
 
-    // CHECK IF PLAYER IS ALREADY PLAYING ON ANY DEVICE
     const activeElsewhere = findActivePlayerAnywhere(cleanName);
     if (activeElsewhere) {
         toast(`مشتری محترم «${escapeHtml(cleanName)}» هم‌اکنون روی دستگاه «${escapeHtml(activeElsewhere.device_name)}» در حال بازی است. ثبت همزمان یک نام روی چند دستگاه امکان‌پذیر نمی‌باشد.`, 'warning');
@@ -85,7 +96,6 @@ async function startDevicePlayer(deviceId, customerName) {
         deviceSessions[deviceId] = [];
     }
 
-    // UPDATE EXISTING PLAYERS' ACCUMULATED SEGMENTS BEFORE N INCREASES
     await updateDeviceActivePlayersSegments(deviceId);
 
     const nowIso = new Date().toISOString();
@@ -104,7 +114,6 @@ async function startDevicePlayer(deviceId, customerName) {
     deviceSessions[deviceId].push({ ...sessionObj, end_time: null });
     saveDeviceSessionsToStorage();
 
-    // PERSIST ACTIVE SESSION TO SUPABASE SO ALL PHONES/COMPUTERS SEE IT IN REALTIME
     if (supa) {
         try {
             await supa.from('active_timer_sessions').insert([sessionObj]);
@@ -112,23 +121,39 @@ async function startDevicePlayer(deviceId, customerName) {
     }
 
     logSystemAction('شروع بازی', `شروع بازی ${cleanName} روی دستگاه ${device.name}`);
+    if (typeof broadcastGlobalSync === 'function') broadcastGlobalSync();
     return true;
 }
 
-// End a player's session on a device with Supabase Cleanup & Order Attachment
+// End a player's session on a device with RACE CONDITION PROTECTION
 async function stopDevicePlayer(deviceId, customerName) {
     if (!deviceSessions[deviceId]) return null;
     const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
-    if (playerIndex === -1) return null;
-
-    // UPDATE ALL PLAYERS' ACCUMULATED SEGMENTS BEFORE N DECREASES
-    await updateDeviceActivePlayersSegments(deviceId);
+    if (playerIndex === -1) {
+        toast(`بازی «${customerName}» قبلاً توسط پرسنل دیگری پایان یافته است.`, 'info');
+        if (typeof silentRefreshData === 'function') await silentRefreshData();
+        return null;
+    }
 
     const playerSession = deviceSessions[deviceId][playerIndex];
+
+    // RACE CONDITION CHECK WITH SUPABASE DB
+    if (supa) {
+        try {
+            const { data: dbCheck } = await supa.from('active_timer_sessions').select('id').eq('id', playerSession.id);
+            if (!dbCheck || !dbCheck.length) {
+                toast(`بازی «${customerName}» قبلاً روی دستگاه دیگری پایان یافته و به تسویه منتقل شده است.`, 'info');
+                if (typeof silentRefreshData === 'function') await silentRefreshData();
+                return null;
+            }
+        } catch(e){}
+    }
+
+    await updateDeviceActivePlayersSegments(deviceId);
+
     const nowIso = new Date().toISOString();
     playerSession.end_time = nowIso;
 
-    // Final cost and duration calculation
     const finalCost = Math.round(playerSession.accumulated_cost || 0);
     const totalSecs = playerSession.accumulated_seconds || 0;
     const durationMins = Math.max(1, Math.round(totalSecs / 60));
@@ -136,21 +161,19 @@ async function stopDevicePlayer(deviceId, customerName) {
     playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
 
-    // Remove from active list
     deviceSessions[deviceId].splice(playerIndex, 1);
     saveDeviceSessionsToStorage();
 
-    // DELETE ACTIVE SESSION FROM SUPABASE FOR ALL CLIENTS
     if (supa) {
         try {
             await supa.from('active_timer_sessions').delete().eq('id', playerSession.id);
         } catch(e) { console.error('Error deleting active_timer_session:', e); }
     }
 
-    // Attach completed timer session to customer's pending order IN DATABASE
     await attachTimerSessionToCustomerOrder(customerName, playerSession);
 
     logSystemAction('پایان بازی', `پایان بازی ${customerName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(finalCost)} تومان)`);
+    if (typeof broadcastGlobalSync === 'function') broadcastGlobalSync();
     return playerSession;
 }
 
@@ -331,8 +354,7 @@ window.addPlayerClick = async function(deviceId) {
         const added = await startDevicePlayer(deviceId, custName);
         if (added) {
             toast(`بازیکن ${custName} روی دستگاه شروع به بازی کرد`);
-            if (typeof loadInitialData === 'function') await loadInitialData();
-            updateLiveDeviceCardsUI();
+            if (typeof silentRefreshData === 'function') await silentRefreshData();
         }
     } catch(err) {
         console.error('Error starting player:', err);
@@ -351,12 +373,7 @@ window.stopPlayerClick = async function(deviceId, customerName) {
         const ended = await stopDevicePlayer(deviceId, customerName);
         if (ended) {
             toast(`بازی ${customerName} به مدت ${ended.final_duration_mins} دقیقه پایان یافت. هزینه: ${formatPrice(ended.final_cost)} تومان`);
-            if (typeof loadInitialData === 'function') await loadInitialData();
-            updateLiveDeviceCardsUI();
-            if (typeof renderOrdersTab === 'function') renderOrdersTab();
-            if (typeof renderSettlement === 'function') renderSettlement();
-            if (typeof renderHistory === 'function') renderHistory();
-            if (typeof renderDashboard === 'function') renderDashboard();
+            if (typeof silentRefreshData === 'function') await silentRefreshData();
         }
     } catch(err) {
         console.error('Error stopping player:', err);
