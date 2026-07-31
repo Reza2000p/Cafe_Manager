@@ -156,7 +156,7 @@ function populateFilters() {
     const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
     const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
     
-    ['histCreatedUserFilter', 'histSettledUserFilter', 'reportUserFilter'].forEach(id => {
+    ['histCreatedUserFilter', 'histSettledUserFilter'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = opts;
     });
@@ -209,9 +209,10 @@ setupTabs('orderTabs', 'orderTabContent', (tab) => {
 setupTabs('menuTabs', 'menuTabContent', null);
 setupTabs('systemTabs', 'systemTabContent', null);
 setupTabs('historySubTabs', 'historySubTabContent', (tab) => { renderHistory(); });
+setupTabs('catSubTabs', 'catSubTabContent', (tab) => { renderCats(); });
 setupTabs('reportSubTabs', 'reportSubTabContent', (tab) => { renderReports(); });
 
-// 4. DASHBOARD
+// 4. DASHBOARD (WITH TOP STATIC ITEMS & TOP TIMER DEVICES)
 document.getElementById('dashTimeFilter').addEventListener('change', renderDashboard);
 
 function renderDashboard() {
@@ -230,10 +231,8 @@ function renderDashboard() {
     const settledOrders = targetOrders.filter(o => o.status !== 'معلق');
     const totalSales = settledOrders.reduce((s, o) => s + (o.total || 0), 0);
 
-    // Revenue breakdown: Static vs Timer Devices
     let staticRevenue = 0;
     let timerRevenue = 0;
-    let totalItemsCount = 0;
 
     settledOrders.forEach(o => {
         (o.items || []).forEach(i => {
@@ -241,29 +240,41 @@ function renderDashboard() {
                 timerRevenue += (i.price || 0);
             } else {
                 staticRevenue += (i.price || 0) * (i.qty || 1);
-                totalItemsCount += (i.qty || 1);
             }
         });
     });
 
-    const avgTicket = settledOrders.length ? Math.round(totalSales / settledOrders.length) : 0;
-
     document.getElementById('dashboardStats').innerHTML = `
-        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-primary text-white"><i class="fas fa-receipt"></i></div><h5>${settledOrders.length}</h5><small>فاکتور تسویه شده</small></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-primary text-white"><i class="fas fa-receipt"></i></div><h5>${settledOrders.length}</h5><small>فاکتور تسویه‌شده</small></div></div>
         <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-success text-white"><i class="fas fa-wallet"></i></div><h5>${formatPrice(totalSales)}</h5><small>درآمد کل (تومان)</small></div></div>
         <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-info text-white"><i class="fas fa-coffee"></i></div><h5>${formatPrice(staticRevenue)}</h5><small>درآمد ثابت‌ها (بوفه)</small></div></div>
         <div class="col-6 col-md-3"><div class="stat-card"><div class="icon-box bg-warning text-dark"><i class="fas fa-gamepad"></i></div><h5>${formatPrice(timerRevenue)}</h5><small>درآمد تایمری‌ها (دستگاه)</small></div></div>
     `;
 
-    // Top Items (Static)
+    // Top Static Items
     const itemMap = {};
     settledOrders.forEach(o => {
         (o.items || []).forEach(i => {
-            if (i.type !== 'timer') itemMap[i.name] = (itemMap[i.name] || 0) + (i.qty || 1);
+            if (i.type !== 'timer' && !i.hourly_rate) itemMap[i.name] = (itemMap[i.name] || 0) + (i.qty || 1);
         });
     });
     const topItems = Object.entries(itemMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     document.getElementById('topItems').innerHTML = topItems.length ? topItems.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-primary">${i[1]} عدد</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+
+    // Top Timer Devices (Most used & revenue)
+    const deviceMap = {};
+    settledOrders.forEach(o => {
+        (o.items || []).forEach(i => {
+            if (i.type === 'timer' || i.hourly_rate) {
+                const dName = i.device_name || i.name;
+                if (!deviceMap[dName]) deviceMap[dName] = { mins: 0, revenue: 0 };
+                deviceMap[dName].mins += (i.duration_mins || 0);
+                deviceMap[dName].revenue += (i.price || 0);
+            }
+        });
+    });
+    const topDevices = Object.entries(deviceMap).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5);
+    document.getElementById('topDevicesList').innerHTML = topDevices.length ? topDevices.map(d => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(d[0])}</span> <span class="fw-bold text-success">${formatPrice(d[1].revenue)} ت (${d[1].mins} دقیقه‌)</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 
     // Top Customers
     const custMap = {};
@@ -276,7 +287,7 @@ function renderDashboard() {
     document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 }
 
-// 5. MENU & TIMER DEVICES MANAGEMENT
+// 5. MENU & CATEGORIES MANAGEMENT
 function populateCatSelects() {
     let opts = localCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     document.getElementById('menuFormCat').innerHTML = opts;
@@ -394,20 +405,40 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
 });
 
 function renderCats() {
-    document.getElementById('catManageList').innerHTML = localCats.map(c => `
+    const staticCats = localCats.filter(c => c.type !== 'timer');
+    const timerCats = localCats.filter(c => c.type === 'timer');
+
+    document.getElementById('catStaticList').innerHTML = staticCats.length ? staticCats.map(c => `
         <li class="list-group-item d-flex justify-content-between align-items-center p-2">${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>
-    `).join('');
+    `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی ثابتی وجود ندارد</li>';
+
+    document.getElementById('catTimerList').innerHTML = timerCats.length ? timerCats.map(c => `
+        <li class="list-group-item d-flex justify-content-between align-items-center p-2"><i class="fas fa-gamepad me-1 text-primary"></i> ${escapeHtml(c.name)} <button class="btn btn-sm btn-danger py-0" onclick="deleteCat(${c.id})"><i class="fas fa-trash"></i></button></li>
+    `).join('') : '<li class="list-group-item text-muted">هیچ دسته‌بندی تایمری وجود ندارد</li>';
 }
 
-document.getElementById('addCatBtn').addEventListener('click', async () => {
-    const name = document.getElementById('newCatName').value.trim();
+document.getElementById('addCatStaticBtn').addEventListener('click', async () => {
+    const name = document.getElementById('newCatStaticName').value.trim();
     if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
     uiLoading(true);
     try {
-        const { error } = await supa.from('categories').insert([{ name }]);
+        const { error } = await supa.from('categories').insert([{ name, type: 'static' }]);
         if (error) throw error;
-        document.getElementById('newCatName').value = '';
-        toast('دسته‌بندی افزوده شد');
+        document.getElementById('newCatStaticName').value = '';
+        toast('دسته‌بندی ثابت‌ها افزوده شد');
+    } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
+    finally { uiLoading(false); }
+});
+
+document.getElementById('addCatTimerBtn').addEventListener('click', async () => {
+    const name = document.getElementById('newCatTimerName').value.trim();
+    if (!name) { toast('نام دسته الزامی است', 'danger'); return; }
+    uiLoading(true);
+    try {
+        const { error } = await supa.from('categories').insert([{ name, type: 'timer' }]);
+        if (error) throw error;
+        document.getElementById('newCatTimerName').value = '';
+        toast('دسته‌بندی تایمری‌ها افزوده شد');
     } catch (err) { console.error('Add cat error:', err); toast('خطا در ثبت دسته', 'danger'); }
     finally { uiLoading(false); }
 });
@@ -618,7 +649,6 @@ function renderSettlement() {
     let pending = localOrders.filter(o => o.status === 'معلق');
     if (sq) pending = pending.filter(o => (o.customer_name || '').toLowerCase().includes(sq));
 
-    // Group pending orders by customer_name
     const groups = {};
     pending.forEach(o => {
         const c = o.customer_name || 'بدون نام';
@@ -706,7 +736,7 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
     }
 };
 
-// 8. HISTORY (2 SUB-TABS: CREATED BY vs SETTLED BY)
+// 8. HISTORY (2 SUB-TABS: CREATED BY vs SETTLED BY WITH PERSIAN DATES)
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
 
@@ -723,7 +753,8 @@ function renderHistory() {
         if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
 
         document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => {
-            const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            const d = new Date(o.created_at);
+            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
             return `
                 <div class="border-bottom py-2">
                     <div class="d-flex justify-content-between mb-1">
@@ -731,7 +762,7 @@ function renderHistory() {
                         <span class="text-primary fw-bold">${formatPrice(o.total)} تومان</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center">
-                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${timeStr} | <i class="fas fa-user-edit me-1"></i> ثبت کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
+                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${dateStr} | <i class="fas fa-user-edit me-1"></i> ثبت کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
                         <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
                     </div>
                 </div>
@@ -750,7 +781,8 @@ function renderHistory() {
         if (dateF === 'today') filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
 
         document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => {
-            const timeStr = new Date(o.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            const d = new Date(o.created_at);
+            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
             return `
                 <div class="border-bottom py-2">
                     <div class="d-flex justify-content-between mb-1">
@@ -758,7 +790,7 @@ function renderHistory() {
                         <span class="text-success fw-bold">${formatPrice(o.total)} تومان</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center">
-                        <div class="order-meta m-0"><i class="fas fa-check-circle text-success me-1"></i> ${timeStr} | <i class="fas fa-user-check me-1"></i> تسویه‌کننده: <strong>${escapeHtml(o.settled_by || o.created_by || 'نامشخص')}</strong></div>
+                        <div class="order-meta m-0"><i class="fas fa-check-circle text-success me-1"></i> ${dateStr} | <i class="fas fa-user-check me-1"></i> تسویه‌کننده: <strong>${escapeHtml(o.settled_by || o.created_by || 'نامشخص')}</strong></div>
                         <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
                     </div>
                 </div>
@@ -772,8 +804,12 @@ function renderHistory() {
     if (el) el.addEventListener('change', renderHistory);
 });
 
-// 9. REPORTS (3 SUB-TABS: SALES, DEVICE PERF, SYSTEM LOGS)
-window.setRepDate = function(mode) {
+// 9. REPORTS (3 SUB-TABS: SALES, DEVICE PERF, SYSTEM LOGS WITH PERSIAN DATES)
+window.setRepDate = function(mode, btnEl) {
+    if (btnEl) {
+        document.querySelectorAll('.quick-date-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+    }
     const dFrom = document.getElementById('reportDateFrom');
     const dTo = document.getElementById('reportDateTo');
     const now = new Date();
@@ -804,7 +840,6 @@ function renderReports() {
     const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
     const fromD = document.getElementById('reportDateFrom').value;
     const toD = document.getElementById('reportDateTo').value;
-    const userF = document.getElementById('reportUserFilter').value;
 
     let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
     if (fromD) {
@@ -815,7 +850,6 @@ function renderReports() {
         const toDate = new Date(toD + 'T23:59:59.999');
         orders = orders.filter(o => new Date(o.created_at) <= toDate);
     }
-    if (userF) orders = orders.filter(o => o.created_by === userF || o.settled_by === userF);
 
     if (activeSubTab === 'sales') {
         const totalRev = orders.reduce((s, o) => s + (o.total || 0), 0);
@@ -849,7 +883,6 @@ function renderReports() {
         document.getElementById('reportActionBtns').style.setProperty('display', 'flex', 'important');
     } 
     else if (activeSubTab === 'devices') {
-        // Device Performance Stats
         const timerDevices = localMenu.filter(m => m.is_timer);
         let deviceStats = {};
         timerDevices.forEach(d => { deviceStats[d.name] = { minutes: 0, revenue: 0, count: 0 }; });
@@ -872,7 +905,7 @@ function renderReports() {
                     <div class="col-12 col-md-6">
                         <div class="card-modern">
                             <h6 class="fw-bold text-primary"><i class="fas fa-gamepad me-1"></i> ${escapeHtml(name)}</h6>
-                            <div class="d-flex justify-content-between small border-bottom py-2"><span>تعداد دفعات بازی:</span> <strong>${stat.count} بار</strong></div>
+                            <div class="d-flex justify-content-between small border-bottom py-2"><span>تعداد دفعات استفاده:</span> <strong>${stat.count} بار</strong></div>
                             <div class="d-flex justify-content-between small border-bottom py-2"><span>مجموع زمان کارکرد:</span> <strong>${stat.minutes} دقیقه (${(stat.minutes/60).toFixed(1)} ساعت)</strong></div>
                             <div class="d-flex justify-content-between small py-2 fs-6"><span>مجموع درآمد دستگاه:</span> <strong class="text-success">${formatPrice(stat.revenue)} تومان</strong></div>
                         </div>
@@ -883,25 +916,24 @@ function renderReports() {
         document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
     } 
     else if (activeSubTab === 'logs') {
-        // Render System Action Logs Table
         document.getElementById('logReportContent').innerHTML = `
             <div class="table-responsive mt-3">
                 <table class="log-table">
                     <thead>
                         <tr>
-                            <th>زمان / تاریخ</th>
+                            <th>تاریخ و زمان</th>
                             <th>کاربر / پرسنل</th>
-                            <th>نوع اکشن</th>
+                            <th>نوع رویداد</th>
                             <th>جزئیات رویداد</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${localLogs.length ? localLogs.map(l => {
                             const d = new Date(l.created_at);
-                            const timeStr = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) + ' - ' + d.toLocaleDateString('fa-IR');
+                            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
                             return `
                                 <tr>
-                                    <td><small class="text-muted">${timeStr}</small></td>
+                                    <td><small class="text-muted">${dateStr}</small></td>
                                     <td><strong>${escapeHtml(l.user_name)}</strong></td>
                                     <td><span class="badge bg-secondary">${escapeHtml(l.action)}</span></td>
                                     <td>${escapeHtml(l.details)}</td>
@@ -933,7 +965,7 @@ window.printReportHTML = function() {
     setTimeout(() => { pr.print(); pr.close(); }, 500);
 };
 
-// 10. SYSTEM & CUSTOMERS
+// 10. SYSTEM & CUSTOMER FULL STATS DETAIL MODAL
 function renderUsers() {
     document.getElementById('userList').innerHTML = localProfiles.map(u => `
         <div class="d-flex justify-content-between align-items-center border-bottom py-2">
@@ -968,13 +1000,78 @@ function renderCustomersList() {
             <div class="border-bottom py-3 d-flex justify-content-between align-items-center">
                 <div>
                     <strong class="fs-6 text-dark">${escapeHtml(c.full_name)}</strong>
-                    <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} سفارش صادر شده<br><i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
+                    <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} فاکتور تسویه شده | <i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
                 </div>
-                <div><button class="btn btn-sm btn-outline-primary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش نام</button></div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-primary-custom" data-name="${escapeHtml(c.full_name)}" onclick="viewCustomerStats(this.dataset.name)"><i class="fas fa-chart-line me-1"></i> مشاهده آمار کامل</button>
+                    <button class="btn btn-sm btn-outline-secondary" data-name="${escapeHtml(c.full_name)}" onclick="editCustomer(this.dataset.name)"><i class="fas fa-edit"></i> ویرایش</button>
+                </div>
             </div>
         `;
     }).join('') : '<div class="empty-state">مشتری یافت نشد</div>';
 }
+
+// FULL CUSTOMER STATS MODAL RENDERER
+window.viewCustomerStats = function(custName) {
+    const custOrders = localOrders.filter(o => o.customer_name === custName && o.status !== 'لغو');
+    const settledOrders = custOrders.filter(o => o.status !== 'معلق');
+    
+    let totalSpent = 0;
+    let totalTimerMins = 0;
+    let itemsPurchasedMap = {};
+
+    settledOrders.forEach(o => {
+        totalSpent += (o.total || 0);
+        (o.items || []).forEach(i => {
+            if (i.type === 'timer' || i.hourly_rate) {
+                totalTimerMins += (i.duration_mins || 0);
+            } else {
+                itemsPurchasedMap[i.name] = (itemsPurchasedMap[i.name] || 0) + (i.qty || 1);
+            }
+        });
+    });
+
+    const itemsSummaryHTML = Object.entries(itemsPurchasedMap).map(([name, qty]) => `
+        <div class="d-flex justify-content-between border-bottom py-1 small">
+            <span>${escapeHtml(name)}</span>
+            <span class="fw-bold">${qty} عدد</span>
+        </div>
+    `).join('') || '<div class="text-muted small">هیچ کالا ثابتی خریداری نشده است</div>';
+
+    const historyOrdersHTML = custOrders.map(o => {
+        const d = new Date(o.created_at);
+        const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        return `
+            <div class="border-bottom py-2 small">
+                <div class="d-flex justify-content-between">
+                    <span>#${o.id} - ${dateStr}</span>
+                    <span class="fw-bold text-success">${formatPrice(o.total)} تومان</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-1">
+                    <span class="text-muted">روش: ${escapeHtml(o.status)} | ثبت: ${escapeHtml(o.created_by || '-')}</span>
+                    <span class="badge ${o.status==='نقدی'?'bg-success':o.status==='کارت'?'bg-info':'bg-warning'}">${escapeHtml(o.status)}</span>
+                </div>
+            </div>
+        `;
+    }).join('') || '<div class="empty-state">سفارشی برای این مشتری وجود ندارد</div>';
+
+    document.getElementById('custModalTitle').innerHTML = `<i class="fas fa-user-circle me-1"></i> آمار کامل مشتری: <strong>${escapeHtml(custName)}</strong>`;
+    document.getElementById('custModalBody').innerHTML = `
+        <div class="row g-2 mb-3">
+            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-primary">${settledOrders.length}</div><small>فاکتور تسویه شده</small></div></div>
+            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-success">${formatPrice(totalSpent)} ت</div><small>مجموع خرید</small></div></div>
+            <div class="col-4"><div class="stat-card p-2"><div class="fs-6 font-weight-bold text-warning">${totalTimerMins} دقیقه</div><small>زمان بازی روی دستگاه‌ها</small></div></div>
+        </div>
+
+        <h6 class="fw-bold text-dark border-bottom pb-2 mt-3"><i class="fas fa-utensils text-info me-1"></i> خلاصه خریدهای بوفه:</h6>
+        <div class="mb-3">${itemsSummaryHTML}</div>
+
+        <h6 class="fw-bold text-dark border-bottom pb-2 mt-3"><i class="fas fa-history text-primary me-1"></i> تاریخچه کامل سفارشات و بازی‌ها:</h6>
+        <div style="max-height:250px; overflow-y:auto;">${historyOrdersHTML}</div>
+    `;
+
+    new bootstrap.Modal(document.getElementById('customerDetailModal')).show();
+};
 
 window.editCustomer = async function(oldName) {
     const newName = prompt('نام جدید مشتری را وارد کنید:', oldName);
