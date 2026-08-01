@@ -726,9 +726,11 @@ window.deleteCat = async function(id) {
 
     uiLoading(true);
     try {
+        const catItem = localCats.find(c => c.id === id);
         const { error } = await supa.from('categories').delete().eq('id', id);
         if (error) throw error;
         toast('دسته حذف شد');
+        logSystemAction('حذف دسته‌بندی', `حذف دسته ${catItem ? catItem.name : id}`);
         await silentRefreshData();
         broadcastGlobalSync();
     } catch (err) { console.error('Delete cat error:', err); toast('خطا در حذف دسته', 'danger'); }
@@ -1330,12 +1332,15 @@ function renderReports() {
 window.exportReportPDF = function() {
     const el = document.getElementById('printableReport');
     if (!el) { toast('گزارشی برای چاپ وجود ندارد', 'warning'); return; }
+    const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
+    const subTabName = activeSubTab === 'sales' ? 'فروش' : activeSubTab === 'devices' ? 'دستگاه‌ها' : 'رویدادها/لاگ‌ها';
     const pr = window.open('', '', 'height=600,width=800');
     pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش کافه کلاور</title><style>body{font-family:Vazir,Tahoma,Arial;font-size:13px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:right;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
     pr.document.close();
     pr.focus();
     setTimeout(() => { pr.print(); pr.close(); }, 500);
     toast('پنجره چاپ / ذخیره PDF باز شد');
+    logSystemAction('چاپ/PDF گزارش', `دریافت خروجی PDF از گزارش ${subTabName}`);
 };
 
 window.exportReportCSV = function() {
@@ -1407,11 +1412,15 @@ window.exportReportCSV = function() {
     link.click();
     document.body.removeChild(link);
     toast('فایل CSV گزارش دانلود شد');
+    const subTabName = activeSubTab === 'sales' ? 'فروش' : activeSubTab === 'devices' ? 'دستگاه‌ها' : 'رویدادها/لاگ‌ها';
+    logSystemAction('خروجی CSV گزارش', `دریافت فایل CSV از گزارش ${subTabName}`);
 };
 
 window.exportReportTXT = function() {
     const el = document.getElementById('printableReport');
     if (!el) { toast('گزارشی برای خروجی متنی وجود ندارد', 'warning'); return; }
+    const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
+    const subTabName = activeSubTab === 'sales' ? 'فروش' : activeSubTab === 'devices' ? 'دستگاه‌ها' : 'رویدادها/لاگ‌ها';
     const text = el.innerText.replace(/\n\s*\n/g, '\n');
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
@@ -1423,6 +1432,7 @@ window.exportReportTXT = function() {
     link.click();
     document.body.removeChild(link);
     toast('فایل متنی (TXT) گزارش دانلود شد');
+    logSystemAction('خروجی TXT گزارش', `دریافت فایل TXT از گزارش ${subTabName}`);
 };
 
 // 10. SYSTEM & FULL PAGE CUSTOMER STATS DETAIL
