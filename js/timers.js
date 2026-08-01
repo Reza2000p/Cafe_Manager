@@ -124,6 +124,8 @@ async function startDevicePlayer(deviceId, customerName) {
         } catch(e) { console.error('Error inserting active_timer_session:', e); }
     }
 
+    if (typeof ensureCustomerExists === 'function') await ensureCustomerExists(cleanName);
+
     logSystemAction('شروع بازی', `شروع بازی ${cleanName} روی دستگاه ${device.name}`);
     if (typeof broadcastGlobalSync === 'function') broadcastGlobalSync();
     return true;

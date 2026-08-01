@@ -770,7 +770,7 @@ document.getElementById('submitOrderBtn').addEventListener('click', async () => 
     uiLoading(true);
     try {
         const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
-        await supa.from('customers').upsert({ full_name: custName }, { onConflict: 'full_name' });
+        await ensureCustomerExists(custName);
         const createdBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;
         
         const { error } = await supa.from('orders').insert([{
@@ -1292,27 +1292,63 @@ function renderUsers() {
 
 document.getElementById('custSearch').addEventListener('input', renderCustomersList);
 
+async function ensureCustomerExists(custName) {
+    if (!custName || !custName.trim()) return;
+    const cleanName = custName.trim();
+    const exist = localCustomers.find(c => (c.full_name || '').toLowerCase() === cleanName.toLowerCase());
+    if (!exist) {
+        const newCust = { full_name: cleanName, created_at: new Date().toISOString() };
+        localCustomers.unshift(newCust);
+        if (supa) {
+            try {
+                await supa.from('customers').insert([newCust]);
+            } catch(e){}
+        }
+    }
+}
+
 function renderCustomersList() {
     const sq = document.getElementById('custSearch').value.trim().toLowerCase();
+    
+    // Aggregate all unique customer names across localCustomers, localOrders, and active deviceSessions
+    const allCustNames = new Set();
+    localCustomers.forEach(c => { if (c.full_name) allCustNames.add(c.full_name.trim()); });
+    localOrders.forEach(o => { if (o.customer_name) allCustNames.add(o.customer_name.trim()); });
+    for (const devId in deviceSessions) {
+        if (Array.isArray(deviceSessions[devId])) {
+            deviceSessions[devId].forEach(p => {
+                if (p.customer_name) allCustNames.add(p.customer_name.trim());
+            });
+        }
+    }
+
+    let customerList = Array.from(allCustNames).map(name => {
+        const custObj = localCustomers.find(c => c.full_name === name);
+        return {
+            full_name: name,
+            created_at: custObj ? custObj.created_at : null
+        };
+    });
+
+    if (sq) customerList = customerList.filter(c => c.full_name.toLowerCase().includes(sq));
+
     let stats = {};
     localOrders.forEach(o => {
-        if (o.status !== 'لغو' && o.status !== 'معلق') {
-            if (!stats[o.customer_name]) stats[o.customer_name] = { count: 0, spent: 0 };
-            stats[o.customer_name].count++;
-            stats[o.customer_name].spent += (o.total || 0);
+        if (o.status !== 'لغو' && o.status !== 'معلق' && o.customer_name) {
+            const name = o.customer_name.trim();
+            if (!stats[name]) stats[name] = { count: 0, spent: 0 };
+            stats[name].count++;
+            stats[name].spent += (o.total || 0);
         }
     });
 
-    let filtered = localCustomers;
-    if (sq) filtered = filtered.filter(c => c.full_name.toLowerCase().includes(sq));
-
-    document.getElementById('customerListTable').innerHTML = filtered.length ? filtered.map(c => {
+    document.getElementById('customerListTable').innerHTML = customerList.length ? customerList.map(c => {
         const s = stats[c.full_name] || { count: 0, spent: 0 };
         return `
             <div class="border-bottom py-3 d-flex justify-content-between align-items-center">
                 <div>
                     <strong class="fs-6 text-dark">${escapeHtml(c.full_name)}</strong>
-                    <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} فاکتور تسویه شده | <i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
+                    <div class="small mt-1 text-muted"><i class="fas fa-shopping-bag me-1"></i> ${s.count} فاکتور تسویه‌شده | <i class="fas fa-coins me-1"></i> ${formatPrice(s.spent)} تومان خرید</div>
                 </div>
                 <div class="d-flex gap-2">
                     <button class="btn btn-sm btn-primary-custom" data-name="${escapeHtml(c.full_name)}" onclick="viewCustomerStats(this.dataset.name)"><i class="fas fa-chart-line me-1"></i> آمار کامل</button>
