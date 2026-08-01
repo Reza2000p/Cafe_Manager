@@ -188,35 +188,57 @@ async function loadInitialData() {
     }
 }
 
-// SILENT REFRESH DATA (NO UI SPINNER FLICKER)
+// SILENT REFRESH DATA (SMART PAYLOAD OPTIMIZATION)
 let isRefreshingSilently = false;
-async function silentRefreshData() {
+async function silentRefreshData(fullRefresh = false) {
     if (isRefreshingSilently || !currentUser) return;
     isRefreshingSilently = true;
     try {
-        const [ordersRes, menuRes, catsRes, activeSessionsRes, custRes, logsRes, profilesRes] = await Promise.all([
-            supa.from('orders').select('*').order('created_at', { ascending: false }),
-            supa.from('menu_items').select('*'),
-            supa.from('categories').select('*'),
-            supa.from('active_timer_sessions').select('*'),
-            supa.from('customers').select('*').order('created_at', { ascending: false }),
-            supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
-            supa.from('profiles').select('*')
-        ]);
+        const activePage = document.querySelector('.page.active')?.id;
+        const isReports = activePage === 'page-reports';
+        const isSystem = activePage === 'page-system';
+
+        let promises = [
+            supa.from('orders').select('*').order('created_at', { ascending: false }).limit(150),
+            supa.from('active_timer_sessions').select('*')
+        ];
+
+        if (fullRefresh || isReports || isSystem) {
+            promises.push(
+                supa.from('menu_items').select('*'),
+                supa.from('categories').select('*'),
+                supa.from('customers').select('*').order('created_at', { ascending: false }).limit(100),
+                supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
+                supa.from('profiles').select('*')
+            );
+        }
+
+        const results = await Promise.all(promises);
+        
+        const ordersRes = results[0];
+        const activeSessionsRes = results[1];
 
         if (ordersRes && ordersRes.data) localOrders = ordersRes.data;
-        if (menuRes && menuRes.data) localMenu = menuRes.data;
-        if (catsRes && catsRes.data) localCats = catsRes.data;
-        if (custRes && custRes.data) localCustomers = custRes.data;
-        if (logsRes && logsRes.data) localLogs = logsRes.data;
-        if (profilesRes && profilesRes.data) {
-            localProfiles = profilesRes.data;
-            populateFilters();
-        }
         if (activeSessionsRes && activeSessionsRes.data && !activeSessionsRes.error) parseSupabaseActiveSessions(activeSessionsRes.data);
 
+        if (fullRefresh || isReports || isSystem) {
+            const menuRes = results[2];
+            const catsRes = results[3];
+            const custRes = results[4];
+            const logsRes = results[5];
+            const profilesRes = results[6];
+
+            if (menuRes && menuRes.data) localMenu = menuRes.data;
+            if (catsRes && catsRes.data) localCats = catsRes.data;
+            if (custRes && custRes.data) localCustomers = custRes.data;
+            if (logsRes && logsRes.data) localLogs = logsRes.data;
+            if (profilesRes && profilesRes.data) {
+                localProfiles = profilesRes.data;
+                populateFilters();
+            }
+        }
+
         // SILENTLY RE-RENDER ACTIVE VIEW
-        const activePage = document.querySelector('.page.active')?.id;
         if (activePage === 'page-orders') {
             const activeOrderTab = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
             if (activeOrderTab === 'timers') updateLiveDeviceCardsUI();
@@ -233,6 +255,7 @@ async function silentRefreshData() {
             renderCustomersList();
         }
     } catch(e) {
+        console.error('Silent refresh error:', e);
     } finally {
         isRefreshingSilently = false;
     }
