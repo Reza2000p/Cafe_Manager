@@ -300,12 +300,20 @@ async function refreshCustomers() {
 }
 
 function populateFilters() {
-    const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
+    const profileNames = localProfiles.map(p => p.full_name).filter(Boolean);
+    const logNames = localLogs.map(l => l.user_name).filter(Boolean);
+    const uniqueUsers = [...new Set([...profileNames, ...logNames])];
     const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
     
     ['histCreatedUserFilter', 'histSettledUserFilter', 'reportLogUserFilter'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.innerHTML = opts;
+        if (el) {
+            const currentVal = el.value;
+            el.innerHTML = opts;
+            if (currentVal && uniqueUsers.includes(currentVal)) {
+                el.value = currentVal;
+            }
+        }
     });
 }
 
@@ -336,6 +344,16 @@ function populateCatSelects(forTimer = false) {
 }
 
 // 3. NAVIGATION & TABS
+function restoreSubTab(navId, contentId) {
+    const savedSubTab = localStorage.getItem(`cafe_subtab_${navId}`);
+    if (savedSubTab) {
+        const tabBtn = document.querySelector(`#${navId} .nav-link[data-tab="${savedSubTab}"]`);
+        if (tabBtn && !tabBtn.classList.contains('active')) {
+            tabBtn.click();
+        }
+    }
+}
+
 function showPage(page) {
     if (!currentUser && page !== 'login') return;
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -349,10 +367,25 @@ function showPage(page) {
     if (page !== 'login') {
         try { localStorage.setItem('cafe_active_page', page); } catch(e){}
         if (page === 'dashboard') renderDashboard();
-        if (page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
-        if (page === 'orders') { renderOrdersTab(); renderSettlement(); }
-        if (page === 'reports') { renderReports(); populateFilters(); }
-        if (page === 'system') { renderUsers(); renderCustomersList(); }
+        if (page === 'menu') {
+            restoreSubTab('menuTabs', 'menuTabContent');
+            restoreSubTab('catSubTabs', 'catSubTabContent');
+            renderMenu(); renderCats(); populateCatSelects();
+        }
+        if (page === 'orders') {
+            restoreSubTab('orderTabs', 'orderTabContent');
+            restoreSubTab('historySubTabs', 'historySubTabContent');
+            renderOrdersTab(); renderSettlement();
+        }
+        if (page === 'reports') {
+            populateFilters();
+            restoreSubTab('reportSubTabs', 'reportSubTabContent');
+            renderReports();
+        }
+        if (page === 'system') {
+            restoreSubTab('systemTabs', 'systemTabContent');
+            renderUsers(); renderCustomersList();
+        }
     }
 }
 
@@ -370,6 +403,7 @@ function setupTabs(navId, contentId, callback) {
             document.querySelectorAll(`#${contentId} > .tab-pane`).forEach(p => p.classList.remove('active'));
             const target = document.querySelector(`#${contentId} > [id$="${this.dataset.tab}"]`);
             if (target) target.classList.add('active');
+            try { localStorage.setItem(`cafe_subtab_${navId}`, this.dataset.tab); } catch(e){}
             if (callback) callback(this.dataset.tab);
         });
     });
@@ -1078,9 +1112,12 @@ function renderHistory() {
     }
 }
 
-['histCreatedPayFilter', 'histCreatedUserFilter', 'histSettledPayFilter', 'histSettledUserFilter'].forEach(id => {
+['histCreatedPayFilter', 'histCreatedUserFilter', 'histSettledPayFilter', 'histSettledUserFilter', 'reportLogUserFilter'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('change', renderHistory);
+    if (el) el.addEventListener('change', () => {
+        if (id === 'reportLogUserFilter') renderReports();
+        else renderHistory();
+    });
 });
 
 document.addEventListener('DOMContentLoaded', () => {
