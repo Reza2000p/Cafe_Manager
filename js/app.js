@@ -274,13 +274,13 @@ function initRealtime() {
 
     globalChannel.subscribe();
 
-    // 3. Fallback Polling (Every 3 Seconds Continuously) for 100% Guaranteed Cross-Device Sync
+    // 3. Fallback Polling (Every 45 Seconds) as background safety net
     if (realtimePollingInterval) clearInterval(realtimePollingInterval);
     realtimePollingInterval = setInterval(async () => {
         if (currentUser) {
             await silentRefreshData();
         }
-    }, 3000);
+    }, 45000);
 }
 
 async function refreshOrders() {
