@@ -302,7 +302,7 @@ function populateFilters() {
     const uniqueUsers = [...new Set(localProfiles.map(p => p.full_name).filter(Boolean))];
     const opts = '<option value="">همه پرسنل</option>' + uniqueUsers.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
     
-    ['histCreatedUserFilter', 'histSettledUserFilter'].forEach(id => {
+    ['histCreatedUserFilter', 'histSettledUserFilter', 'reportLogUserFilter'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = opts;
     });
@@ -327,6 +327,11 @@ function populateCatSelects(forTimer = false) {
     if (timerFilter) {
         timerFilter.innerHTML = `<option value="">همه دسته‌بندی‌های دستگاه‌ها</option>` + timerCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     }
+
+    const timerMenuFilter = document.getElementById('timerMenuCatFilter');
+    if (timerMenuFilter) {
+        timerMenuFilter.innerHTML = `<option value="">همه دسته‌های تایمری</option>` + timerCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    }
 }
 
 // 3. NAVIGATION & TABS
@@ -344,7 +349,7 @@ function showPage(page) {
         if (page === 'dashboard') renderDashboard();
         if (page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
         if (page === 'orders') { renderOrdersTab(); renderSettlement(); }
-        if (page === 'reports') { renderReports(); }
+        if (page === 'reports') { renderReports(); populateFilters(); }
         if (page === 'system') { renderUsers(); renderCustomersList(); }
     }
 }
@@ -384,6 +389,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tCat = document.getElementById('timerDeviceCatFilter');
     if (tSearch) tSearch.addEventListener('input', updateLiveDeviceCardsUI);
     if (tCat) tCat.addEventListener('change', updateLiveDeviceCardsUI);
+
+    const tmSearch = document.getElementById('timerMenuSearch');
+    const tmCat = document.getElementById('timerMenuCatFilter');
+    if (tmSearch) tmSearch.addEventListener('input', renderMenu);
+    if (tmCat) tmCat.addEventListener('change', renderMenu);
 });
 
 // 4. DASHBOARD
@@ -395,10 +405,18 @@ function renderDashboard() {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     let targetOrders = localOrders.filter(o => o.status !== 'لغو');
 
-    if (timeFilter === 'today') targetOrders = targetOrders.filter(o => new Date(o.created_at) >= startOfToday);
-    else if (timeFilter === 'week' || timeFilter === 'month') {
+    if (timeFilter === 'today') {
+        targetOrders = targetOrders.filter(o => new Date(o.created_at) >= startOfToday);
+    } else if (timeFilter === 'yesterday') {
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        targetOrders = targetOrders.filter(o => {
+            const d = new Date(o.created_at);
+            return d >= startOfYesterday && d < startOfToday;
+        });
+    } else if (timeFilter === '3days' || timeFilter === 'week' || timeFilter === 'month') {
         const limitDate = new Date(startOfToday);
-        limitDate.setDate(limitDate.getDate() - (timeFilter === 'week' ? 7 : 30) + 1);
+        limitDate.setDate(limitDate.getDate() - (timeFilter === '3days' ? 2 : (timeFilter === 'week' ? 6 : 29)));
         targetOrders = targetOrders.filter(o => new Date(o.created_at) >= limitDate);
     }
 
@@ -463,11 +481,14 @@ function renderDashboard() {
 
 // 5. MENU & CATEGORIES MANAGEMENT
 function renderMenu() {
-    const q = document.getElementById('menuSearch').value.trim().toLowerCase();
-    const c = document.getElementById('menuCatFilter').value;
+    const q = (document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
+    const c = document.getElementById('menuCatFilter')?.value || '';
+
+    const tQ = (document.getElementById('timerMenuSearch')?.value || '').trim().toLowerCase();
+    const tC = document.getElementById('timerMenuCatFilter')?.value || '';
 
     const staticItems = localMenu.filter(it => !it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
-    const timerDevices = localMenu.filter(it => it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
+    const timerDevices = localMenu.filter(it => it.is_timer && it.name.toLowerCase().includes(tQ) && (tC ? it.cat === tC : true));
 
     // Render Static Items Tab
     document.getElementById('staticMenuList').innerHTML = staticItems.length ? staticItems.map(it => `
@@ -1028,6 +1049,10 @@ function renderReports() {
     const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
     const fromD = document.getElementById('reportDateFrom').value;
     const toD = document.getElementById('reportDateTo').value;
+    const logUserF = document.getElementById('reportLogUserFilter')?.value || '';
+
+    const actionBtns = document.getElementById('reportActionBtns');
+    if (actionBtns) actionBtns.style.setProperty('display', 'flex', 'important');
 
     let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
     if (fromD) {
@@ -1044,31 +1069,54 @@ function renderReports() {
         const totalCash = orders.filter(o => o.status === 'نقدی').reduce((s, o) => s + (o.total || 0), 0);
         const totalCard = orders.filter(o => o.status === 'کارت').reduce((s, o) => s + (o.total || 0), 0);
 
+        let staticRev = 0;
+        let timerRev = 0;
+
         let itemsMap = {};
+        let devicesMap = {};
+
         orders.forEach(o => {
             (o.items || []).forEach(i => {
-                if (!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
-                itemsMap[i.name].qty += (i.qty || 1);
-                itemsMap[i.name].revenue += (i.price || 0) * (i.qty || 1);
+                if (i.type === 'timer' || i.hourly_rate) {
+                    const dName = i.device_name || i.name.replace('بازی ', '');
+                    timerRev += (i.price || 0);
+                    if (!devicesMap[dName]) devicesMap[dName] = { mins: 0, revenue: 0, count: 0 };
+                    devicesMap[dName].mins += (i.duration_mins || 0);
+                    devicesMap[dName].revenue += (i.price || 0);
+                    devicesMap[dName].count++;
+                } else {
+                    staticRev += (i.price || 0) * (i.qty || 1);
+                    if (!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
+                    itemsMap[i.name].qty += (i.qty || 1);
+                    itemsMap[i.name].revenue += (i.price || 0) * (i.qty || 1);
+                }
             });
         });
-        const sortedItems = Object.entries(itemsMap).sort((a, b) => b[1].qty - a[1].qty);
+
+        const sortedItems = Object.entries(itemsMap).sort((a, b) => b[1].revenue - a[1].revenue);
+        const sortedDevices = Object.entries(devicesMap).sort((a, b) => b[1].revenue - a[1].revenue);
 
         document.getElementById('salesReportContent').innerHTML = `
             <div id="printableReport" class="alert alert-light border shadow-sm mt-3" style="direction:rtl; text-align:right;">
-                <h5 class="text-center text-primary mb-3 fw-bold">آمار دقیق فروش</h5>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>فاکتورهای تسویه شده:</span> <strong>${orders.length} عدد</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع نقدی:</span> <strong class="text-success">${formatPrice(totalCash)} تومان</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع کارتخوان:</span> <strong class="text-info">${formatPrice(totalCard)} تومان</strong></div>
+                <h5 class="text-center text-primary mb-3 fw-bold">آمار دقیق فروش و کل درآمد</h5>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>فاکتورهای تسویه‌شده:</span> <strong>${orders.length} عدد</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>درآمد ثابت‌ها (بوفه):</span> <strong class="text-info">${formatPrice(staticRev)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>درآمد تایمری‌ها (دستگاه‌ها):</span> <strong class="text-warning">${formatPrice(timerRev)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه نقدی:</span> <strong class="text-success">${formatPrice(totalCash)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه کارتخوان:</span> <strong class="text-primary">${formatPrice(totalCard)} تومان</strong></div>
                 <div class="d-flex justify-content-between mt-3 fs-5 border-bottom pb-2 mb-3"><span>کل درآمد:</span> <strong class="text-primary">${formatPrice(totalRev)} تومان</strong></div>
                 
-                <h6 class="fw-bold mt-2 text-dark"><i class="fas fa-list me-1"></i> ریز اقلام و خدمات فروخته شده:</h6>
+                <h6 class="fw-bold mt-3 text-dark"><i class="fas fa-utensils text-info me-1"></i> پرفروش‌ترین اقلام بوفه (به ترتیب درآمد):</h6>
+                <ul class="list-group list-group-flush small mb-3">
+                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(i[0])} (${i[1].qty} عدد)</span> <span class="fw-bold text-success">${formatPrice(i[1].revenue)} تومان</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">موردی ثبت نشده است</li>'}
+                </ul>
+
+                <h6 class="fw-bold mt-3 text-dark"><i class="fas fa-gamepad text-warning me-1"></i> پرکاربردترین دستگاه‌های بازی (به ترتیب درآمد):</h6>
                 <ul class="list-group list-group-flush small">
-                    ${sortedItems.length ? sortedItems.map(i => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(i[0])}</span> <span><span class="fw-bold text-dark">${i[1].qty}</span> بار/عدد (<span class="text-muted">${formatPrice(i[1].revenue)} تومان</span>)</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">موردی ثبت نشده است</li>'}
+                    ${sortedDevices.length ? sortedDevices.map(d => `<li class="list-group-item d-flex justify-content-between px-0 bg-transparent"><span>${escapeHtml(d[0])} (${d[1].count} بار - ${d[1].mins} دقیقه)</span> <span class="fw-bold text-success">${formatPrice(d[1].revenue)} تومان</span></li>`).join('') : '<li class="list-group-item px-0 bg-transparent text-muted">موردی ثبت نشده است</li>'}
                 </ul>
             </div>
         `;
-        document.getElementById('reportActionBtns').style.setProperty('display', 'flex', 'important');
     } 
     else if (activeSubTab === 'devices') {
         const timerDevices = localMenu.filter(m => m.is_timer);
@@ -1087,9 +1135,11 @@ function renderReports() {
             });
         });
 
+        const sortedDevStats = Object.entries(deviceStats).sort((a, b) => b[1].revenue - a[1].revenue);
+
         document.getElementById('deviceReportContent').innerHTML = `
-            <div class="row g-3 mt-2">
-                ${Object.entries(deviceStats).map(([name, stat]) => `
+            <div id="printableReport" class="row g-3 mt-2">
+                ${sortedDevStats.map(([name, stat]) => `
                     <div class="col-12 col-md-6">
                         <div class="card-modern">
                             <h6 class="fw-bold text-primary"><i class="fas fa-gamepad me-1"></i> ${escapeHtml(name)}</h6>
@@ -1101,7 +1151,6 @@ function renderReports() {
                 `).join('')}
             </div>
         `;
-        document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
     } 
     else if (activeSubTab === 'logs') {
         let logs = localLogs;
@@ -1113,9 +1162,15 @@ function renderReports() {
             const toDate = new Date(toD + 'T23:59:59.999');
             logs = logs.filter(l => new Date(l.created_at) <= toDate);
         }
+        if (logUserF) {
+            logs = logs.filter(l => l.user_name === logUserF);
+        }
+
+        const logContainer = document.querySelector('#logReportContent .table-responsive');
+        const prevScrollLeft = logContainer ? logContainer.scrollLeft : 0;
 
         document.getElementById('logReportContent').innerHTML = `
-            <div class="table-responsive mt-3">
+            <div id="printableReport" class="table-responsive mt-3">
                 <table class="log-table">
                     <thead>
                         <tr>
@@ -1142,25 +1197,84 @@ function renderReports() {
                 </table>
             </div>
         `;
-        document.getElementById('reportActionBtns').style.setProperty('display', 'none', 'important');
+
+        const newLogContainer = document.querySelector('#logReportContent .table-responsive');
+        if (newLogContainer && prevScrollLeft) {
+            newLogContainer.scrollLeft = prevScrollLeft;
+        }
     }
 }
 
-window.copyReportText = function() {
+// EXPORT SYSTEM FOR REPORTS (PDF, CSV, TXT)
+window.exportReportPDF = function() {
     const el = document.getElementById('printableReport');
-    if (!el) return;
-    const text = el.innerText.replace(/\n\s*\n/g, '\n');
-    navigator.clipboard.writeText(text).then(() => toast('متن گزارش کپی شد')).catch(() => toast('خطا در کپی', 'danger'));
-};
-
-window.printReportHTML = function() {
-    const el = document.getElementById('printableReport');
-    if (!el) return;
+    if (!el) { toast('گزارشی برای چاپ وجود ندارد', 'warning'); return; }
     const pr = window.open('', '', 'height=600,width=800');
-    pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش</title><style>body{font-family:Vazir,Tahoma,Arial;font-size:14px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
+    pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش کافه کلاور</title><style>body{font-family:Vazir,Tahoma,Arial;font-size:13px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:right;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
     pr.document.close();
     pr.focus();
     setTimeout(() => { pr.print(); pr.close(); }, 500);
+    toast('پنجره چاپ / ذخیره PDF باز شد');
+};
+
+window.exportReportCSV = function() {
+    const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
+    const fromD = document.getElementById('reportDateFrom').value;
+    const toD = document.getElementById('reportDateTo').value;
+    const logUserF = document.getElementById('reportLogUserFilter')?.value || '';
+
+    let csvContent = "\uFEFF"; // UTF-8 BOM for Excel
+
+    if (activeSubTab === 'sales' || activeSubTab === 'devices') {
+        let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
+        if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD + 'T00:00:00'));
+        if (toD) orders = orders.filter(o => new Date(o.created_at) <= new Date(toD + 'T23:59:59.999'));
+
+        csvContent += "شماره فاکتور,مشتری,مبلغ کل (تومان),روش تسویه,ثبت کننده,تسویه کننده,تاریخ\n";
+        orders.forEach(o => {
+            const d = new Date(o.created_at);
+            const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            csvContent += `"${o.id}","${o.customer_name || ''}","${o.total || 0}","${o.status || ''}","${o.created_by || ''}","${o.settled_by || ''}","${dateStr}"\n`;
+        });
+    } else if (activeSubTab === 'logs') {
+        let logs = localLogs;
+        if (fromD) logs = logs.filter(l => new Date(l.created_at) >= new Date(fromD + 'T00:00:00'));
+        if (toD) logs = logs.filter(l => new Date(l.created_at) <= new Date(toD + 'T23:59:59.999'));
+        if (logUserF) logs = logs.filter(l => l.user_name === logUserF);
+
+        csvContent += "تاریخ و زمان,کاربر / پرسنل,نوع رویداد,جزئیات رویداد\n";
+        logs.forEach(l => {
+            const d = new Date(l.created_at);
+            const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+            csvContent += `"${dateStr}","${l.user_name || ''}","${l.action || ''}","${(l.details || '').replace(/"/g, '""')}"\n`;
+        });
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cafe_report_${activeSubTab}_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast('فایل CSV گزارش دانلود شد');
+};
+
+window.exportReportTXT = function() {
+    const el = document.getElementById('printableReport');
+    if (!el) { toast('گزارشی برای خروجی متنی وجود ندارد', 'warning'); return; }
+    const text = el.innerText.replace(/\n\s*\n/g, '\n');
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `cafe_report_${Date.now()}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast('فایل متنی (TXT) گزارش دانلود شد');
 };
 
 // 10. SYSTEM & FULL PAGE CUSTOMER STATS DETAIL
@@ -1292,7 +1406,7 @@ window.editCustomer = async function(oldName) {
 
         const { error: err1 } = await supa.from('customers').update({ full_name: newName }).eq('full_name', oldName);
         if (err1) throw err1;
-        const { error: err2 } = await supa.from('orders').update({ customer_name: newName }).eq('customer_name', oldName);
+        const { error: err2 } = await supa.from('orders').update({ customer_name: newName }).eq('customer_name', oldName).eq('status', 'معلق');
         if (err2) throw err2;
 
         try {
