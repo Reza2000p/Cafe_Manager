@@ -84,7 +84,8 @@ async function initApp() {
             currentUser = session.user;
             await loadInitialData();
             document.getElementById('logoutBtn').style.display = 'inline';
-            showPage('dashboard');
+            const savedPage = localStorage.getItem('cafe_active_page') || 'dashboard';
+            showPage(savedPage);
             initRealtime();
             startLiveTimerTicker();
         } else {
@@ -346,6 +347,7 @@ function showPage(page) {
     });
 
     if (page !== 'login') {
+        try { localStorage.setItem('cafe_active_page', page); } catch(e){}
         if (page === 'dashboard') renderDashboard();
         if (page === 'menu') { renderMenu(); renderCats(); populateCatSelects(); }
         if (page === 'orders') { renderOrdersTab(); renderSettlement(); }
@@ -932,6 +934,62 @@ window.exportHistoryCSV = function() {
     logSystemAction('دانلود تاریخچه', 'دریافت خروجی CSV کل تاریخچه سفارشات');
 };
 
+function renderHistoryOrderCard(o) {
+    const d = new Date(o.created_at);
+    const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+
+    const timerItems = (o.items || []).filter(i => i.type === 'timer' || i.hourly_rate);
+    const staticItems = (o.items || []).filter(i => i.type !== 'timer' && !i.hourly_rate);
+
+    let timerRows = timerItems.map(t => {
+        let timeRange = '';
+        const sTime = t.start_time_str || (t.start_time ? new Date(t.start_time).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '');
+        const eTime = t.end_time_str || (t.end_time ? new Date(t.end_time).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }) : '');
+        if (sTime && eTime) {
+            timeRange = ` (از ${sTime} تا ${eTime})`;
+        }
+        return `
+            <div class="d-flex justify-content-between align-items-center border-bottom border-light py-1 small">
+                <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه</span>
+                <span class="fw-bold text-dark">${formatPrice(t.price)} تومان</span>
+            </div>
+        `;
+    }).join('');
+
+    let staticRows = staticItems.map(s => `
+        <div class="d-flex justify-content-between align-items-center border-bottom border-light py-1 small">
+            <span><i class="fas fa-coffee text-info me-1"></i> ${escapeHtml(s.name)} (x${s.qty || 1})</span>
+            <span class="fw-bold text-dark">${formatPrice((s.price || 0) * (s.qty || 1))} تومان</span>
+        </div>
+    `).join('');
+
+    return `
+        <div class="card-modern mb-2 p-3 border">
+            <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
+                <div>
+                    <strong class="fs-6 text-dark"><i class="fas fa-receipt text-primary me-1"></i> #${o.id} - ${escapeHtml(o.customer_name)}</strong>
+                </div>
+                <div class="text-end">
+                    <span class="fw-bold text-success fs-6">${formatPrice(o.total)} تومان</span>
+                    <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'} ms-2">${escapeHtml(o.status)}</span>
+                </div>
+            </div>
+
+            ${(timerItems.length || staticItems.length) ? `
+                <div class="bg-light p-2 rounded-3 mb-2">
+                    ${timerItems.length ? `<div class="small fw-bold text-secondary mb-1"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌ها:</div>${timerRows}` : ''}
+                    ${staticItems.length ? `<div class="small fw-bold text-secondary mb-1 ${timerItems.length ? 'mt-2' : ''}"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
+                </div>
+            ` : ''}
+
+            <div class="d-flex justify-content-between align-items-center small text-muted">
+                <div><i class="fas fa-clock me-1"></i> ${dateStr}</div>
+                <div><i class="fas fa-user-edit me-1"></i> ثبت: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong> | <i class="fas fa-user-check me-1"></i> تسویه: <strong>${escapeHtml(o.settled_by || o.created_by || 'نامشخص')}</strong></div>
+            </div>
+        </div>
+    `;
+}
+
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
 
@@ -954,22 +1012,7 @@ function renderHistory() {
             filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
         }
 
-        document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => {
-            const d = new Date(o.created_at);
-            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-            return `
-                <div class="border-bottom py-2">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span class="fw-bold">#${o.id} ${escapeHtml(o.customer_name)}</span>
-                        <span class="text-primary fw-bold">${formatPrice(o.total)} تومان</span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="order-meta m-0"><i class="fas fa-clock me-1"></i> ${dateStr} | <i class="fas fa-user-edit me-1"></i> ثبت‌کننده: <strong>${escapeHtml(o.created_by || 'نامشخص')}</strong></div>
-                        <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
-                    </div>
-                </div>
-            `;
-        }).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
+        document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
     } else {
         const payF = document.getElementById('histSettledPayFilter').value;
         const userF = document.getElementById('histSettledUserFilter').value;
@@ -989,22 +1032,7 @@ function renderHistory() {
             filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
         }
 
-        document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => {
-            const d = new Date(o.created_at);
-            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-            return `
-                <div class="border-bottom py-2">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span class="fw-bold">#${o.id} ${escapeHtml(o.customer_name)}</span>
-                        <span class="text-success fw-bold">${formatPrice(o.total)} تومان</span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div class="order-meta m-0"><i class="fas fa-check-circle text-success me-1"></i> ${dateStr} | <i class="fas fa-user-check me-1"></i> تسویه‌کننده: <strong>${escapeHtml(o.settled_by || o.created_by || 'نامشخص')}</strong></div>
-                        <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'}">${escapeHtml(o.status)}</span>
-                    </div>
-                </div>
-            `;
-        }).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
+        document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
     }
 }
 
