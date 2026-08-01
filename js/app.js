@@ -915,8 +915,15 @@ window.exportHistoryCSV = function() {
         return;
     }
 
+    const fromD = document.getElementById('histDateFrom')?.value;
+    const toD = document.getElementById('histDateTo')?.value;
+
+    let orders = localOrders.filter(o => o.status !== 'معلق');
+    if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD + 'T00:00:00'));
+    if (toD) orders = orders.filter(o => new Date(o.created_at) <= new Date(toD + 'T23:59:59.999'));
+
     let csvContent = "\uFEFFشماره سفارش,مشتری,مبلغ (تومان),وضعیت,ثبت کننده,تسویه کننده,تاریخ و ساعت\n";
-    localOrders.forEach(o => {
+    orders.forEach(o => {
         const d = new Date(o.created_at);
         const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
         csvContent += `"${o.id}","${o.customer_name || ''}","${o.total || 0}","${o.status || ''}","${o.created_by || ''}","${o.settled_by || ''}","${dateStr}"\n`;
@@ -932,6 +939,43 @@ window.exportHistoryCSV = function() {
     document.body.removeChild(link);
     toast('فایل CSV تاریخچه دانلود شد');
     logSystemAction('دانلود تاریخچه', 'دریافت خروجی CSV کل تاریخچه سفارشات');
+};
+
+window.setHistDate = function(mode, btnEl) {
+    if (btnEl) {
+        document.querySelectorAll('#tab-history .quick-date-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+    }
+    const dFrom = document.getElementById('histDateFrom');
+    const dTo = document.getElementById('histDateTo');
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    if (mode === 'today') { dFrom.value = todayStr; dTo.value = todayStr; }
+    else if (mode === 'yesterday') {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        const yYear = yest.getFullYear();
+        const yMonth = String(yest.getMonth() + 1).padStart(2, '0');
+        const yDay = String(yest.getDate()).padStart(2, '0');
+        const yestStr = `${yYear}-${yMonth}-${yDay}`;
+        dFrom.value = yestStr; dTo.value = yestStr;
+    }
+    else if (mode === 'all') { dFrom.value = ''; dTo.value = ''; }
+    else {
+        const limit = new Date(now);
+        if (mode === '3days') limit.setDate(limit.getDate() - 2);
+        if (mode === 'week') limit.setDate(limit.getDate() - 6);
+        const lYear = limit.getFullYear();
+        const lMonth = String(limit.getMonth() + 1).padStart(2, '0');
+        const lDay = String(limit.getDate()).padStart(2, '0');
+        dFrom.value = `${lYear}-${lMonth}-${lDay}`;
+        dTo.value = todayStr;
+    }
+    renderHistory();
 };
 
 function renderHistoryOrderCard(o) {
@@ -992,53 +1036,56 @@ function renderHistoryOrderCard(o) {
 
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
+    const fromD = document.getElementById('histDateFrom')?.value;
+    const toD = document.getElementById('histDateTo')?.value;
 
     if (activeSubTab === 'created') {
-        const payF = document.getElementById('histCreatedPayFilter').value;
-        const userF = document.getElementById('histCreatedUserFilter').value;
-        const dateF = document.getElementById('histCreatedDateFilter').value;
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const payF = document.getElementById('histCreatedPayFilter')?.value;
+        const userF = document.getElementById('histCreatedUserFilter')?.value;
 
         let filtered = localOrders.filter(o => o.status !== 'معلق');
         if (payF) filtered = filtered.filter(o => o.status === payF);
         if (userF) filtered = filtered.filter(o => o.created_by === userF);
 
-        if (dateF === 'today') {
-            filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
-        } else if (dateF === '3days' || dateF === 'week') {
-            const limitDate = new Date(startOfToday);
-            limitDate.setDate(limitDate.getDate() - (dateF === '3days' ? 2 : 6));
-            filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
+        if (fromD) {
+            const fromDate = new Date(fromD + 'T00:00:00');
+            filtered = filtered.filter(o => new Date(o.created_at) >= fromDate);
+        }
+        if (toD) {
+            const toDate = new Date(toD + 'T23:59:59.999');
+            filtered = filtered.filter(o => new Date(o.created_at) <= toDate);
         }
 
         document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
     } else {
-        const payF = document.getElementById('histSettledPayFilter').value;
-        const userF = document.getElementById('histSettledUserFilter').value;
-        const dateF = document.getElementById('histSettledDateFilter').value;
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const payF = document.getElementById('histSettledPayFilter')?.value;
+        const userF = document.getElementById('histSettledUserFilter')?.value;
 
         let filtered = localOrders.filter(o => o.status !== 'معلق');
         if (payF) filtered = filtered.filter(o => o.status === payF);
         if (userF) filtered = filtered.filter(o => o.settled_by === userF);
 
-        if (dateF === 'today') {
-            filtered = filtered.filter(o => new Date(o.created_at) >= startOfToday);
-        } else if (dateF === '3days' || dateF === 'week') {
-            const limitDate = new Date(startOfToday);
-            limitDate.setDate(limitDate.getDate() - (dateF === '3days' ? 2 : 6));
-            filtered = filtered.filter(o => new Date(o.created_at) >= limitDate);
+        if (fromD) {
+            const fromDate = new Date(fromD + 'T00:00:00');
+            filtered = filtered.filter(o => new Date(o.created_at) >= fromDate);
+        }
+        if (toD) {
+            const toDate = new Date(toD + 'T23:59:59.999');
+            filtered = filtered.filter(o => new Date(o.created_at) <= toDate);
         }
 
         document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
     }
 }
 
-['histCreatedPayFilter', 'histCreatedUserFilter', 'histCreatedDateFilter', 'histSettledPayFilter', 'histSettledUserFilter', 'histSettledDateFilter'].forEach(id => {
+['histCreatedPayFilter', 'histCreatedUserFilter', 'histSettledPayFilter', 'histSettledUserFilter'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', renderHistory);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const applyBtn = document.getElementById('applyHistFilter');
+    if (applyBtn) applyBtn.addEventListener('click', renderHistory);
 });
 
 // 9. REPORTS
@@ -1056,6 +1103,15 @@ window.setRepDate = function(mode, btnEl) {
     const todayStr = `${year}-${month}-${day}`;
 
     if (mode === 'today') { dFrom.value = todayStr; dTo.value = todayStr; }
+    else if (mode === 'yesterday') {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        const yYear = yest.getFullYear();
+        const yMonth = String(yest.getMonth() + 1).padStart(2, '0');
+        const yDay = String(yest.getDate()).padStart(2, '0');
+        const yestStr = `${yYear}-${yMonth}-${yDay}`;
+        dFrom.value = yestStr; dTo.value = yestStr;
+    }
     else if (mode === 'all') { dFrom.value = ''; dTo.value = ''; }
     else {
         const limit = new Date(now);
@@ -1253,7 +1309,7 @@ window.exportReportCSV = function() {
 
     let csvContent = "\uFEFF"; // UTF-8 BOM for Excel
 
-    if (activeSubTab === 'sales' || activeSubTab === 'devices') {
+    if (activeSubTab === 'sales') {
         let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
         if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD + 'T00:00:00'));
         if (toD) orders = orders.filter(o => new Date(o.created_at) <= new Date(toD + 'T23:59:59.999'));
@@ -1263,6 +1319,33 @@ window.exportReportCSV = function() {
             const d = new Date(o.created_at);
             const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
             csvContent += `"${o.id}","${o.customer_name || ''}","${o.total || 0}","${o.status || ''}","${o.created_by || ''}","${o.settled_by || ''}","${dateStr}"\n`;
+        });
+    } else if (activeSubTab === 'devices') {
+        let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
+        if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD + 'T00:00:00'));
+        if (toD) orders = orders.filter(o => new Date(o.created_at) <= new Date(toD + 'T23:59:59.999'));
+
+        const timerDevices = localMenu.filter(m => m.is_timer);
+        let deviceStats = {};
+        timerDevices.forEach(d => { deviceStats[d.name] = { minutes: 0, revenue: 0, count: 0 }; });
+
+        orders.forEach(o => {
+            (o.items || []).forEach(i => {
+                if (i.type === 'timer' || i.hourly_rate) {
+                    const dName = i.device_name || i.name.replace('بازی ', '');
+                    if (!deviceStats[dName]) deviceStats[dName] = { minutes: 0, revenue: 0, count: 0 };
+                    deviceStats[dName].minutes += (i.duration_mins || 0);
+                    deviceStats[dName].revenue += (i.price || 0);
+                    deviceStats[dName].count++;
+                }
+            });
+        });
+
+        const sortedDevStats = Object.entries(deviceStats).sort((a, b) => b[1].revenue - a[1].revenue);
+
+        csvContent += "نام دستگاه,تعداد دفعات استفاده (بار),مجموع زمان کارکرد (دقیقه),مجموع زمان کارکرد (ساعت),مجموع درآمد دستگاه (تومان)\n";
+        sortedDevStats.forEach(([name, stat]) => {
+            csvContent += `"${name}","${stat.count}","${stat.minutes}","${(stat.minutes / 60).toFixed(1)}","${stat.revenue}"\n`;
         });
     } else if (activeSubTab === 'logs') {
         let logs = localLogs;

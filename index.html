@@ -153,20 +153,25 @@
                         <button class="btn btn-sm btn-outline-success" onclick="exportHistoryCSV()"><i class="fas fa-file-excel me-1"></i> خروجی CSV</button>
                     </div>
 
+                    <div class="quick-dates-container mb-3">
+                        <button class="quick-date-btn active" onclick="setHistDate('today', this)">امروز</button>
+                        <button class="quick-date-btn" onclick="setHistDate('yesterday', this)">دیروز</button>
+                        <button class="quick-date-btn" onclick="setHistDate('3days', this)">۳ روز</button>
+                        <button class="quick-date-btn" onclick="setHistDate('week', this)">هفته</button>
+                        <button class="quick-date-btn" onclick="setHistDate('all', this)">کل تاریخچه</button>
+                    </div>
+                    <div class="row g-2 mb-3 bg-light p-2 rounded">
+                        <div class="col-12 col-md-5"><label class="form-label small text-muted mb-0">از تاریخ:</label><input type="date" id="histDateFrom" class="form-control form-control-sm"></div>
+                        <div class="col-12 col-md-5"><label class="form-label small text-muted mb-0">تا تاریخ:</label><input type="date" id="histDateTo" class="form-control form-control-sm"></div>
+                        <div class="col-12 col-md-2 d-flex align-items-end"><button class="btn btn-primary-custom w-100 btn-sm py-1" id="applyHistFilter"><i class="fas fa-sync me-1"></i> بروزرسانی</button></div>
+                    </div>
+
                     <div id="historySubTabContent">
                         <!-- Created By Sub-Tab -->
                         <div class="tab-pane active" id="htab-created">
                             <div class="row g-2 mb-3 bg-light p-2 rounded">
-                                <div class="col-12 col-md-4"><select id="histCreatedPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
-                                <div class="col-12 col-md-4"><select id="histCreatedUserFilter" class="form-select"><option value="">همه پرسنل ثبت‌کننده</option></select></div>
-                                <div class="col-12 col-md-4">
-                                    <select id="histCreatedDateFilter" class="form-select">
-                                        <option value="today">امروز</option>
-                                        <option value="3days">۳ روز گذشته</option>
-                                        <option value="week">هفته گذشته</option>
-                                        <option value="all">کل تاریخچه</option>
-                                    </select>
-                                </div>
+                                <div class="col-12 col-md-6"><select id="histCreatedPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
+                                <div class="col-12 col-md-6"><select id="histCreatedUserFilter" class="form-select"><option value="">همه پرسنل ثبت‌کننده</option></select></div>
                             </div>
                             <div id="historyCreatedList"></div>
                         </div>
@@ -174,16 +179,8 @@
                         <!-- Settled By Sub-Tab -->
                         <div class="tab-pane" id="htab-settled">
                             <div class="row g-2 mb-3 bg-light p-2 rounded">
-                                <div class="col-12 col-md-4"><select id="histSettledPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
-                                <div class="col-12 col-md-4"><select id="histSettledUserFilter" class="form-select"><option value="">همه پرسنل تسویه‌کننده</option></select></div>
-                                <div class="col-12 col-md-4">
-                                    <select id="histSettledDateFilter" class="form-select">
-                                        <option value="today">امروز</option>
-                                        <option value="3days">۳ روز گذشته</option>
-                                        <option value="week">هفته گذشته</option>
-                                        <option value="all">کل تاریخچه</option>
-                                    </select>
-                                </div>
+                                <div class="col-12 col-md-6"><select id="histSettledPayFilter" class="form-select"><option value="">همه روش‌ها</option><option value="نقدی">نقدی</option><option value="کارت">کارتخوان</option></select></div>
+                                <div class="col-12 col-md-6"><select id="histSettledUserFilter" class="form-select"><option value="">همه پرسنل تسویه‌کننده</option></select></div>
                             </div>
                             <div id="historySettledList"></div>
                         </div>
@@ -271,6 +268,7 @@
         <div class="card-modern">
             <div class="quick-dates-container mb-3">
                 <button class="quick-date-btn active" onclick="setRepDate('today', this)">امروز</button>
+                <button class="quick-date-btn" onclick="setRepDate('yesterday', this)">دیروز</button>
                 <button class="quick-date-btn" onclick="setRepDate('3days', this)">۳ روز</button>
                 <button class="quick-date-btn" onclick="setRepDate('week', this)">هفته</button>
                 <button class="quick-date-btn" onclick="setRepDate('month', this)">ماه</button>
