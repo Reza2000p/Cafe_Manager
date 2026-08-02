@@ -162,9 +162,9 @@ async function loadInitialData() {
         const [menuRes, catsRes, ordersRes, profilesRes, custRes, logsRes, activeSessionsRes] = await Promise.all([
             supa.from('menu_items').select('*'),
             supa.from('categories').select('*'),
-            supa.from('orders').select('*').order('created_at', { ascending: false }),
+            supa.from('orders').select('*').order('created_at', { ascending: false }).limit(200),
             supa.from('profiles').select('*'),
-            supa.from('customers').select('*').order('created_at', { ascending: false }),
+            supa.from('customers').select('*').order('created_at', { ascending: false }).limit(100),
             supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
             supa.from('active_timer_sessions').select('*')
         ]);
@@ -188,8 +188,17 @@ async function loadInitialData() {
     }
 }
 
-// SILENT REFRESH DATA (SMART PAYLOAD OPTIMIZATION)
+// SILENT REFRESH DATA (SMART PAYLOAD OPTIMIZATION & DEBOUNCE)
 let isRefreshingSilently = false;
+let refreshDebounceTimer = null;
+
+function debouncedSilentRefresh(fullRefresh = false) {
+    if (refreshDebounceTimer) clearTimeout(refreshDebounceTimer);
+    refreshDebounceTimer = setTimeout(() => {
+        silentRefreshData(fullRefresh);
+    }, 300);
+}
+
 async function silentRefreshData(fullRefresh = false) {
     if (isRefreshingSilently || !currentUser) return;
     isRefreshingSilently = true;
@@ -287,21 +296,16 @@ function initRealtime() {
 
     // 1. Broadcast Listener (Fires INSTANTLY across all devices and phones)
     globalChannel.on('broadcast', { event: 'sync_all' }, async () => {
-        await silentRefreshData();
-    });
-
-    // 2. Postgres DB Changes Listener
-    globalChannel.on('postgres_changes', { event: '*', schema: 'public' }, async () => {
-        await silentRefreshData();
+        debouncedSilentRefresh(false);
     });
 
     globalChannel.subscribe();
 
-    // 3. Fallback Polling (Every 45 Seconds) as background safety net
+    // 2. Fallback Polling (Every 45 Seconds) as background safety net
     if (realtimePollingInterval) clearInterval(realtimePollingInterval);
     realtimePollingInterval = setInterval(async () => {
         if (currentUser) {
-            await silentRefreshData();
+            debouncedSilentRefresh(false);
         }
     }, 45000);
 }
