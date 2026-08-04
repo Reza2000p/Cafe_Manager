@@ -23,6 +23,7 @@ function showConfirmModal(title, text) {
         
         const onConfirm = () => {
             confirmed = true;
+            if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
             modal.hide();
         };
 
@@ -53,6 +54,7 @@ function showInputModal(title, label, defaultValue = '') {
         const onConfirm = () => {
             const val = inputEl.value;
             resultValue = val ? val.trim() : null;
+            if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
             modal.hide();
         };
 
@@ -72,12 +74,13 @@ function showInputModal(title, label, defaultValue = '') {
 async function initApp() {
     uiLoading(true);
     try {
-        if (!supa) {
+        const client = (typeof getSupa === 'function') ? getSupa() : supa;
+        if (!client) {
             showPage('login');
             uiLoading(false);
             return;
         }
-        const { data: { session }, error } = await supa.auth.getSession();
+        const { data: { session }, error } = await client.auth.getSession();
         if (error) throw error;
 
         if (session) {
@@ -99,31 +102,40 @@ async function initApp() {
         uiLoading(false);
     }
 
-    supa.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-            currentUser = null;
-            userProfile = null;
-            if (realtimePollingInterval) {
-                clearInterval(realtimePollingInterval);
-                realtimePollingInterval = null;
+    const activeClient = (typeof getSupa === 'function') ? getSupa() : supa;
+    if (activeClient) {
+        activeClient.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                userProfile = null;
+                if (realtimePollingInterval) {
+                    clearInterval(realtimePollingInterval);
+                    realtimePollingInterval = null;
+                }
+                if (globalChannel) {
+                    try { activeClient.removeChannel(globalChannel); } catch(e){}
+                    globalChannel = null;
+                }
+                document.getElementById('logoutBtn').style.display = 'none';
+                showPage('login');
             }
-            if (globalChannel) {
-                try { supa.removeChannel(globalChannel); } catch(e){}
-                globalChannel = null;
-            }
-            document.getElementById('logoutBtn').style.display = 'none';
-            showPage('login');
-        }
-    });
+        });
+    }
 }
 
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     uiLoading(true);
     try {
+        const client = (typeof getSupa === 'function') ? getSupa() : supa;
+        if (!client) {
+            toast('ارتباط با کلاینت دیتابیس (Supabase) برقرار نشد. لطفاً اتصال اینترنت خود را بررسی کنید یا صفحه را رفرش فرمایید.', 'danger');
+            uiLoading(false);
+            return;
+        }
         const email = document.getElementById('loginEmail').value.trim();
         const password = document.getElementById('loginPassword').value.trim();
-        const { data, error } = await supa.auth.signInWithPassword({ email, password });
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
         if (error) {
             toast('ایمیل یا رمز عبور اشتباه است', 'danger');
         } else {
@@ -552,6 +564,11 @@ function sortMenuItemsByCategory(items) {
         const orderA = catOrderMap[a.cat] !== undefined ? catOrderMap[a.cat] : 9999;
         const orderB = catOrderMap[b.cat] !== undefined ? catOrderMap[b.cat] : 9999;
         if (orderA !== orderB) return orderA - orderB;
+
+        const displayOrderA = Number(a.display_order || 0);
+        const displayOrderB = Number(b.display_order || 0);
+        if (displayOrderA !== displayOrderB) return displayOrderA - displayOrderB;
+
         return (a.name || '').localeCompare(b.name || '', 'fa');
     });
 }
@@ -572,7 +589,7 @@ function renderMenu() {
     // Render Static Items Tab
     document.getElementById('staticMenuList').innerHTML = staticItems.length ? staticItems.map(it => `
         <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-            <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
+            <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
             <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
         </div>
     `).join('') : '<div class="empty-state">آیتم ثابتی یافت نشد</div>';
@@ -590,7 +607,7 @@ function renderMenu() {
 
         return `
             <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-                <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-success fw-bold mt-1 small">${rateDisplay}</div></div>
+                <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span><div class="text-success fw-bold mt-1 small">${rateDisplay}</div></div>
                 <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
             </div>
         `;
@@ -617,6 +634,7 @@ document.getElementById('addStaticItemBtn').addEventListener('click', () => {
     document.getElementById('priceLabel').textContent = 'قیمت ثابت (تومان)';
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
+    document.getElementById('menuFormDisplayOrder').value = '0';
     document.getElementById('rateTypeContainer').style.display = 'none';
     document.getElementById('tieredRateContainer').style.display = 'none';
     document.getElementById('fixedRateContainer').style.display = 'block';
@@ -631,6 +649,7 @@ document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
     document.getElementById('priceLabel').textContent = 'نرخ هر ۱ ساعت (تومان)';
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
+    document.getElementById('menuFormDisplayOrder').value = '0';
     
     document.getElementById('rateTypeContainer').style.display = 'block';
     document.getElementById('menuFormRateType').value = 'fixed';
@@ -656,6 +675,7 @@ window.editMenu = function(id) {
     document.getElementById('menuFormName').value = item.name;
     document.getElementById('menuFormPrice').value = item.is_timer ? (item.hourly_rate || item.price) : item.price;
     document.getElementById('menuFormCat').value = item.cat || '';
+    document.getElementById('menuFormDisplayOrder').value = item.display_order !== undefined ? item.display_order : 0;
 
     if (item.is_timer) {
         document.getElementById('rateTypeContainer').style.display = 'block';
@@ -711,6 +731,7 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
     const isTimer = document.getElementById('menuFormIsTimer').value === 'true';
     const name = document.getElementById('menuFormName').value.trim();
     const cat = document.getElementById('menuFormCat').value;
+    const displayOrder = parseInt(document.getElementById('menuFormDisplayOrder').value) || 0;
 
     let price = parseInt(document.getElementById('menuFormPrice').value);
     let rateType = 'fixed';
@@ -748,7 +769,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
             is_timer: isTimer, 
             hourly_rate: isTimer ? (price || 0) : 0,
             rate_type: isTimer ? rateType : 'fixed',
-            tiered_rates: isTimer && rateType === 'variable' ? tieredRates : null
+            tiered_rates: isTimer && rateType === 'variable' ? tieredRates : null,
+            display_order: displayOrder
         };
         
         let error;
@@ -1053,10 +1075,15 @@ function renderSettlement() {
 }
 
 window.settleCustomerGroup = async function(idsArray, method, customerName) {
+    let confirmTitle = 'تأیید تسویه‌حساب';
+    let confirmMsg = `آیا از ثبت تسویه‌حساب مشتری «${customerName}» به روش «${method}» اطمینان دارید؟`;
     if (method === 'لغو') {
-        const confirmCancel = await showConfirmModal('لغو سفارشات', `آیا تمامی سفارشات ${customerName} لغو شوند؟`);
-        if (!confirmCancel) return;
+        confirmTitle = 'تأیید لغو سفارشات';
+        confirmMsg = `آیا تمامی سفارشات معلق مشتری «${customerName}» لغو و پاکسازی شوند؟`;
     }
+    const confirmAction = await showConfirmModal(confirmTitle, confirmMsg);
+    if (!confirmAction) return;
+
     uiLoading(true);
     try {
         const settledBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;

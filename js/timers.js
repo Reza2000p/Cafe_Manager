@@ -351,6 +351,10 @@ function updateLiveDeviceCardsUI() {
     if (q) timerDevices = timerDevices.filter(d => d.name.toLowerCase().includes(q));
     if (catF) timerDevices = timerDevices.filter(d => d.cat === catF);
 
+    if (typeof sortMenuItemsByCategory === 'function') {
+        timerDevices = sortMenuItemsByCategory(timerDevices);
+    }
+
     if (!timerDevices.length) {
         container.innerHTML = '<div class="empty-state">هیچ دستگاه تایمری با این مشخصات یافت نشد</div>';
         return;

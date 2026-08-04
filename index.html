@@ -14,6 +14,7 @@
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/styles.css?v=20260731_v6" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>if (!window.supabase) document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');</script>
 </head>
 <body>
 
@@ -386,11 +387,12 @@
                             <label class="form-label micro-text text-muted mb-1">۳ نفره:</label>
                             <input type="number" id="tierRate3" class="form-control form-control-sm" placeholder="مثال: ۲۵۰۰۰۰">
                         </div>
-                        <div class="col-6">
-                            <label class="form-label micro-text text-muted mb-1">۴ نفره:</label>
-                            <input type="number" id="tierRate4" class="form-control form-control-sm" placeholder="مثال: ۳۰۰۰۰۰">
-                        </div>
                     </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ترتیب نمایش در دسته (عدد)</label>
+                    <input type="number" id="menuFormDisplayOrder" class="form-control" placeholder="مثال: ۱، ۲، ۳..." value="0">
+                    <small class="text-muted" style="font-size:0.75rem;">تعیین اولویت ترتیب نمایش در درون همان دسته‌بندی</small>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small fw-bold">دسته‌بندی</label>

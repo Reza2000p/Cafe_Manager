@@ -3,7 +3,14 @@
 // ==========================================
 const SUPABASE_URL = 'https://mknpjmdnbgteopvqwzcq.supabase.co'; 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rbnBqbWRuYmd0ZW9wdnF3emNxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MTcwODQsImV4cCI6MjEwMDk5MzA4NH0.-Tysg5UZYoXgKM-BCl1FecaolvwKHr_XfAesKVWeUyc';
-const supa = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+let supa = (typeof window !== 'undefined' && window.supabase) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+function getSupa() {
+    if (!supa && typeof window !== 'undefined' && window.supabase) {
+        supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+    return supa;
+}
 
 // ==========================================
 // STATE & GLOBAL VARS
