@@ -179,9 +179,11 @@ async function stopDevicePlayer(deviceId, customerName) {
     // AUTHORITATIVE SYNC WITH SUPABASE DB TO PREVENT CROSS-ACCOUNT TIME DRIFT BUGS
     if (supa) {
         try {
-            const { data: dbCheck } = await supa.from('active_timer_sessions').select('*').eq('id', playerSession.id).single();
-            if (!dbCheck) {
+            const { data: dbCheck, error: dbErr } = await supa.from('active_timer_sessions').select('*').eq('id', playerSession.id).single();
+            if (dbErr || !dbCheck) {
                 toast(`بازی «${customerName}» قبلاً روی دستگاه دیگری پایان یافته و به تسویه منتقل شده است.`, 'info');
+                deviceSessions[deviceId].splice(playerIndex, 1);
+                saveDeviceSessionsToStorage();
                 if (typeof silentRefreshData === 'function') await silentRefreshData();
                 return null;
             }
@@ -190,7 +192,9 @@ async function stopDevicePlayer(deviceId, customerName) {
             if (dbCheck.current_segment_start) playerSession.current_segment_start = dbCheck.current_segment_start;
             if (dbCheck.accumulated_cost !== undefined) playerSession.accumulated_cost = Number(dbCheck.accumulated_cost || 0);
             if (dbCheck.accumulated_seconds !== undefined) playerSession.accumulated_seconds = Number(dbCheck.accumulated_seconds || 0);
-        } catch(e){}
+        } catch(e) {
+            console.error('Database sync error in stopDevicePlayer:', e);
+        }
     }
 
     await updateDeviceActivePlayersSegments(deviceId);
@@ -209,14 +213,25 @@ async function stopDevicePlayer(deviceId, customerName) {
     playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
 
-    deviceSessions[deviceId].splice(playerIndex, 1);
-    saveDeviceSessionsToStorage();
-
+    // ATOMIC DB DELETE PROTECTION (Prevents race condition duplicates across multiple accounts)
     if (supa) {
         try {
-            await supa.from('active_timer_sessions').delete().eq('id', playerSession.id);
-        } catch(e) { console.error('Error deleting active_timer_session:', e); }
+            const { data: deletedRows, error: delErr } = await supa.from('active_timer_sessions').delete().eq('id', playerSession.id).select();
+            if (delErr || !deletedRows || deletedRows.length === 0) {
+                console.log('Session already deleted by another account/device');
+                toast(`بازی «${customerName}» هم‌زمان توسط پرسنل دیگری پایان یافت.`, 'info');
+                deviceSessions[deviceId].splice(playerIndex, 1);
+                saveDeviceSessionsToStorage();
+                if (typeof silentRefreshData === 'function') await silentRefreshData();
+                return null;
+            }
+        } catch(e) { 
+            console.error('Error deleting active_timer_session:', e); 
+        }
     }
+
+    deviceSessions[deviceId].splice(playerIndex, 1);
+    saveDeviceSessionsToStorage();
 
     await attachTimerSessionToCustomerOrder(customerName, playerSession);
 
@@ -279,6 +294,18 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
 
     if (pendingOrder) {
         if (!pendingOrder.items) pendingOrder.items = [];
+
+        // Deduplication check
+        const isDup = pendingOrder.items.some(it => 
+            (it.type === 'timer' || it.hourly_rate) &&
+            it.device_name === sessionData.device_name &&
+            it.start_time === sessionData.start_time
+        );
+        if (isDup) {
+            console.log('Duplicate timer session ignored in attachTimerSessionToCustomerOrder');
+            return;
+        }
+
         pendingOrder.items.push(timerItem);
         pendingOrder.total = (pendingOrder.total || 0) + sessionData.final_cost;
         

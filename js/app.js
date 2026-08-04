@@ -5,7 +5,7 @@
 // AUTO SERVICE WORKER REGISTRATION & FORCE UPDATE CHECK
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=20260731_v6').then(reg => {
+        navigator.serviceWorker.register('./sw.js?v=20260804_v7').then(reg => {
             reg.update(); // Force check for SW update on every load
         }).catch(err => console.log('SW registration error:', err));
     });
@@ -668,38 +668,47 @@ window.editMenu = function(id) {
     const item = localMenu.find(i => i.id === id);
     if (!item) return;
     populateCatSelects(item.is_timer);
-    document.getElementById('menuFormId').value = id;
-    document.getElementById('menuFormIsTimer').value = item.is_timer ? 'true' : 'false';
-    document.getElementById('menuModalTitle').textContent = item.is_timer ? 'ویرایش دستگاه تایمری' : 'ویرایش آیتم ثابت';
-    document.getElementById('priceLabel').textContent = item.is_timer ? 'نرخ هر ۱ ساعت (تومان)' : 'قیمت ثابت (تومان)';
-    document.getElementById('menuFormName').value = item.name;
-    document.getElementById('menuFormPrice').value = item.is_timer ? (item.hourly_rate || item.price) : item.price;
-    document.getElementById('menuFormCat').value = item.cat || '';
-    document.getElementById('menuFormDisplayOrder').value = item.display_order !== undefined ? item.display_order : 0;
+    
+    const setVal = (elId, val) => {
+        const el = document.getElementById(elId);
+        if (el) el.value = val !== undefined && val !== null ? val : '';
+    };
+
+    setVal('menuFormId', id);
+    setVal('menuFormIsTimer', item.is_timer ? 'true' : 'false');
+    const modalTitle = document.getElementById('menuModalTitle');
+    if (modalTitle) modalTitle.textContent = item.is_timer ? 'ویرایش دستگاه تایمری' : 'ویرایش آیتم ثابت';
+    const priceLabel = document.getElementById('priceLabel');
+    if (priceLabel) priceLabel.textContent = item.is_timer ? 'نرخ هر ۱ ساعت (تومان)' : 'قیمت ثابت (تومان)';
+    setVal('menuFormName', item.name);
+    setVal('menuFormPrice', item.is_timer ? (item.hourly_rate || item.price) : item.price);
+    setVal('menuFormCat', item.cat || '');
+    setVal('menuFormDisplayOrder', item.display_order !== undefined ? item.display_order : 0);
+
+    const rateTypeContainer = document.getElementById('rateTypeContainer');
+    const tieredRateContainer = document.getElementById('tieredRateContainer');
+    const fixedRateContainer = document.getElementById('fixedRateContainer');
 
     if (item.is_timer) {
-        document.getElementById('rateTypeContainer').style.display = 'block';
+        if (rateTypeContainer) rateTypeContainer.style.display = 'block';
         const rateType = item.rate_type || 'fixed';
-        document.getElementById('menuFormRateType').value = rateType;
+        setVal('menuFormRateType', rateType);
         const isVar = rateType === 'variable';
-        document.getElementById('tieredRateContainer').style.display = isVar ? 'block' : 'none';
-        document.getElementById('fixedRateContainer').style.display = isVar ? 'none' : 'block';
+        if (tieredRateContainer) tieredRateContainer.style.display = isVar ? 'block' : 'none';
+        if (fixedRateContainer) fixedRateContainer.style.display = isVar ? 'none' : 'block';
 
         if (isVar && item.tiered_rates) {
-            document.getElementById('tierRate1').value = item.tiered_rates['1'] || '';
-            document.getElementById('tierRate2').value = item.tiered_rates['2'] || '';
-            document.getElementById('tierRate3').value = item.tiered_rates['3'] || '';
-            document.getElementById('tierRate4').value = item.tiered_rates['4'] || '';
+            setVal('tierRate1', item.tiered_rates['1'] || '');
+            setVal('tierRate2', item.tiered_rates['2'] || '');
+            setVal('tierRate3', item.tiered_rates['3'] || '');
+            setVal('tierRate4', item.tiered_rates['4'] || '');
         } else {
-            ['tierRate1', 'tierRate2', 'tierRate3', 'tierRate4'].forEach(tid => {
-                const el = document.getElementById(tid);
-                if (el) el.value = '';
-            });
+            ['tierRate1', 'tierRate2', 'tierRate3', 'tierRate4'].forEach(tid => setVal(tid, ''));
         }
     } else {
-        document.getElementById('rateTypeContainer').style.display = 'none';
-        document.getElementById('tieredRateContainer').style.display = 'none';
-        document.getElementById('fixedRateContainer').style.display = 'block';
+        if (rateTypeContainer) rateTypeContainer.style.display = 'none';
+        if (tieredRateContainer) tieredRateContainer.style.display = 'none';
+        if (fixedRateContainer) fixedRateContainer.style.display = 'block';
     }
 
     new bootstrap.Modal(document.getElementById('menuModal')).show();
