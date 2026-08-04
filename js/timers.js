@@ -411,7 +411,7 @@ function updateLiveDeviceCardsUI() {
 }
 
 // Custom Modal Event Handlers for Device Timers
-window.addPlayerClick = async function(deviceId) {
+async function addPlayerClick(deviceId) {
     const custName = await showInputModal('افزودن بازیکن به دستگاه', 'نام بازیکن / مشتری را وارد کنید:');
     if (!custName) return;
     uiLoading(true);
@@ -427,16 +427,18 @@ window.addPlayerClick = async function(deviceId) {
     } finally {
         uiLoading(false);
     }
-};
+}
+window.addPlayerClick = addPlayerClick;
 
-window.stopPlayerBtnClick = function(btnEl) {
+function stopPlayerBtnClick(btnEl) {
     if (!btnEl) return;
     const deviceId = Number(btnEl.dataset.deviceId);
     const customerName = btnEl.dataset.customerName;
     stopPlayerClick(deviceId, customerName);
-};
+}
+window.stopPlayerBtnClick = stopPlayerBtnClick;
 
-window.stopPlayerClick = async function(deviceId, customerName) {
+async function stopPlayerClick(deviceId, customerName) {
     const confirmStop = await showConfirmModal('پایان بازی', `آیا بازی ${customerName} پایان یابد؟`);
     if (!confirmStop) return;
     
@@ -453,4 +455,5 @@ window.stopPlayerClick = async function(deviceId, customerName) {
     } finally {
         uiLoading(false);
     }
-};
+}
+window.stopPlayerClick = stopPlayerClick;
