@@ -589,8 +589,16 @@ function renderMenu() {
     // Render Static Items Tab
     document.getElementById('staticMenuList').innerHTML = staticItems.length ? staticItems.map(it => `
         <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-            <div><strong class="fs-6">${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span><div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div></div>
-            <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
+            <div style="flex:1; min-width:0;" class="pe-2">
+                <strong class="fs-6">${escapeHtml(it.name)}</strong>
+                <span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span>
+                <span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span>
+                <div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div>
+            </div>
+            <div style="flex-shrink:0;" class="d-flex align-items-center gap-1 me-2">
+                <button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button>
+            </div>
         </div>
     `).join('') : '<div class="empty-state">آیتم ثابتی یافت نشد</div>';
 
@@ -607,8 +615,16 @@ function renderMenu() {
 
         return `
             <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-                <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span><div class="text-success fw-bold mt-1 small">${rateDisplay}</div></div>
-                <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
+                <div style="flex:1; min-width:0;" class="pe-2">
+                    <strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong>
+                    <span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span>
+                    <span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span>
+                    <div class="text-success fw-bold mt-1 small" style="white-space:normal; word-break:break-word;">${rateDisplay}</div>
+                </div>
+                <div style="flex-shrink:0;" class="d-flex align-items-center gap-1 me-2">
+                    <button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button>
+                </div>
             </div>
         `;
     }).join('') : '<div class="empty-state">دستگاه تایمری یافت نشد</div>';
