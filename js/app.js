@@ -538,11 +538,20 @@ function renderDashboard() {
     document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 
     // Recent Orders
-    const recent = settledOrders.slice(0, 5);
-    document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+    const re// 5. MENU & CATEGORIES MANAGEMENT
+function sortMenuItemsByCategory(items) {
+    const catOrderMap = {};
+    localCats.forEach((cat, index) => {
+        catOrderMap[cat.name] = index;
+    });
+    return items.slice().sort((a, b) => {
+        const orderA = catOrderMap[a.cat] !== undefined ? catOrderMap[a.cat] : 9999;
+        const orderB = catOrderMap[b.cat] !== undefined ? catOrderMap[b.cat] : 9999;
+        if (orderA !== orderB) return orderA - orderB;
+        return (a.name || '').localeCompare(b.name || '', 'fa');
+    });
 }
 
-// 5. MENU & CATEGORIES MANAGEMENT
 function renderMenu() {
     const q = (document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
     const c = document.getElementById('menuCatFilter')?.value || '';
@@ -550,8 +559,11 @@ function renderMenu() {
     const tQ = (document.getElementById('timerMenuSearch')?.value || '').trim().toLowerCase();
     const tC = document.getElementById('timerMenuCatFilter')?.value || '';
 
-    const staticItems = localMenu.filter(it => !it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
-    const timerDevices = localMenu.filter(it => it.is_timer && it.name.toLowerCase().includes(tQ) && (tC ? it.cat === tC : true));
+    let staticItems = localMenu.filter(it => !it.is_timer && it.name.toLowerCase().includes(q) && (c ? it.cat === c : true));
+    let timerDevices = localMenu.filter(it => it.is_timer && it.name.toLowerCase().includes(tQ) && (tC ? it.cat === tC : true));
+
+    staticItems = sortMenuItemsByCategory(staticItems);
+    timerDevices = sortMenuItemsByCategory(timerDevices);
 
     // Render Static Items Tab
     document.getElementById('staticMenuList').innerHTML = staticItems.length ? staticItems.map(it => `
@@ -562,16 +574,36 @@ function renderMenu() {
     `).join('') : '<div class="empty-state">آیتم ثابتی یافت نشد</div>';
 
     // Render Timer Devices Tab
-    document.getElementById('timerMenuList').innerHTML = timerDevices.length ? timerDevices.map(it => `
-        <div class="d-flex justify-content-between align-items-center border-bottom py-3">
-            <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-success fw-bold mt-1">نرخ هر ساعت: ${formatPrice(it.hourly_rate || it.price)} تومان</div></div>
-            <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
-        </div>
-    `).join('') : '<div class="empty-state">دستگاه تایمری یافت نشد</div>';
+    document.getElementById('timerMenuList').innerHTML = timerDevices.length ? timerDevices.map(it => {
+        const isVar = it.rate_type === 'variable';
+        let rateDisplay = '';
+        if (isVar && it.tiered_rates && typeof it.tiered_rates === 'object') {
+            rateDisplay = Object.entries(it.tiered_rates).map(([k, v]) => `${k}نفره: ${formatPrice(v)}ت`).join(' | ');
+            rateDisplay = `نرخ متغیر: ${rateDisplay}`;
+        } else {
+            rateDisplay = `نرخ ثابت (نفری): ${formatPrice(it.hourly_rate || it.price)} تومان/ساعت`;
+        }
+
+        return `
+            <div class="d-flex justify-content-between align-items-center border-bottom py-3">
+                <div><strong class="fs-6"><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(it.name)}</strong><span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span><div class="text-success fw-bold mt-1 small">${rateDisplay}</div></div>
+                <div><button class="btn btn-sm btn-outline-warning" onclick="editMenu(${it.id})"><i class="fas fa-edit"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="deleteMenu(${it.id})"><i class="fas fa-trash"></i></button></div>
+            </div>
+        `;
+    }).join('') : '<div class="empty-state">دستگاه تایمری یافت نشد</div>';
 }
 
 document.getElementById('menuSearch').addEventListener('input', renderMenu);
 document.getElementById('menuCatFilter').addEventListener('change', renderMenu);
+
+const rateTypeSelect = document.getElementById('menuFormRateType');
+if (rateTypeSelect) {
+    rateTypeSelect.addEventListener('change', () => {
+        const isVar = rateTypeSelect.value === 'variable';
+        document.getElementById('tieredRateContainer').style.display = isVar ? 'block' : 'none';
+        document.getElementById('fixedRateContainer').style.display = isVar ? 'none' : 'block';
+    });
+}
 
 document.getElementById('addStaticItemBtn').addEventListener('click', () => {
     populateCatSelects(false);
@@ -581,6 +613,9 @@ document.getElementById('addStaticItemBtn').addEventListener('click', () => {
     document.getElementById('priceLabel').textContent = 'قیمت ثابت (تومان)';
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
+    document.getElementById('rateTypeContainer').style.display = 'none';
+    document.getElementById('tieredRateContainer').style.display = 'none';
+    document.getElementById('fixedRateContainer').style.display = 'block';
     new bootstrap.Modal(document.getElementById('menuModal')).show();
 });
 
@@ -592,6 +627,17 @@ document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
     document.getElementById('priceLabel').textContent = 'نرخ هر ۱ ساعت (تومان)';
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
+    
+    document.getElementById('rateTypeContainer').style.display = 'block';
+    document.getElementById('menuFormRateType').value = 'fixed';
+    document.getElementById('tieredRateContainer').style.display = 'none';
+    document.getElementById('fixedRateContainer').style.display = 'block';
+    
+    ['tierRate1', 'tierRate2', 'tierRate3', 'tierRate4'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
     new bootstrap.Modal(document.getElementById('menuModal')).show();
 });
 
@@ -606,6 +652,32 @@ window.editMenu = function(id) {
     document.getElementById('menuFormName').value = item.name;
     document.getElementById('menuFormPrice').value = item.is_timer ? (item.hourly_rate || item.price) : item.price;
     document.getElementById('menuFormCat').value = item.cat || '';
+
+    if (item.is_timer) {
+        document.getElementById('rateTypeContainer').style.display = 'block';
+        const rateType = item.rate_type || 'fixed';
+        document.getElementById('menuFormRateType').value = rateType;
+        const isVar = rateType === 'variable';
+        document.getElementById('tieredRateContainer').style.display = isVar ? 'block' : 'none';
+        document.getElementById('fixedRateContainer').style.display = isVar ? 'none' : 'block';
+
+        if (isVar && item.tiered_rates) {
+            document.getElementById('tierRate1').value = item.tiered_rates['1'] || '';
+            document.getElementById('tierRate2').value = item.tiered_rates['2'] || '';
+            document.getElementById('tierRate3').value = item.tiered_rates['3'] || '';
+            document.getElementById('tierRate4').value = item.tiered_rates['4'] || '';
+        } else {
+            ['tierRate1', 'tierRate2', 'tierRate3', 'tierRate4'].forEach(tid => {
+                const el = document.getElementById(tid);
+                if (el) el.value = '';
+            });
+        }
+    } else {
+        document.getElementById('rateTypeContainer').style.display = 'none';
+        document.getElementById('tieredRateContainer').style.display = 'none';
+        document.getElementById('fixedRateContainer').style.display = 'block';
+    }
+
     new bootstrap.Modal(document.getElementById('menuModal')).show();
 };
 
@@ -634,20 +706,66 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
     const id = document.getElementById('menuFormId').value;
     const isTimer = document.getElementById('menuFormIsTimer').value === 'true';
     const name = document.getElementById('menuFormName').value.trim();
-    const price = parseInt(document.getElementById('menuFormPrice').value);
     const cat = document.getElementById('menuFormCat').value;
 
-    if (!name || isNaN(price) || price < 0) {
-        toast('نام یا مبلغ نامعتبر است', 'danger');
+    let price = parseInt(document.getElementById('menuFormPrice').value);
+    let rateType = 'fixed';
+    let tieredRates = null;
+
+    if (isTimer) {
+        rateType = document.getElementById('menuFormRateType').value;
+        if (rateType === 'variable') {
+            tieredRates = {
+                "1": parseInt(document.getElementById('tierRate1').value) || 0,
+                "2": parseInt(document.getElementById('tierRate2').value) || 0,
+                "3": parseInt(document.getElementById('tierRate3').value) || 0,
+                "4": parseInt(document.getElementById('tierRate4').value) || 0
+            };
+            price = tieredRates["1"] || 0;
+        }
+    }
+
+    if (!name) {
+        toast('نام آیتم/دستگاه الزامی است', 'danger');
+        return;
+    }
+
+    if (rateType === 'fixed' && (isNaN(price) || price < 0)) {
+        toast('مبلغ نامعتبر است', 'danger');
         return;
     }
 
     uiLoading(true);
     try {
-        const payload = { name, cat, price: price, is_timer: isTimer, hourly_rate: isTimer ? price : 0 };
+        const payload = { 
+            name, 
+            cat, 
+            price: price || 0, 
+            is_timer: isTimer, 
+            hourly_rate: isTimer ? (price || 0) : 0,
+            rate_type: isTimer ? rateType : 'fixed',
+            tiered_rates: isTimer && rateType === 'variable' ? tieredRates : null
+        };
+        
         let error;
         if (id) {
             ({ error } = await supa.from('menu_items').update(payload).eq('id', id));
+        } else {
+            ({ error } = await supa.from('menu_items').insert([payload]));
+        }
+        if (error) throw error;
+        toast('اطلاعات با موفقیت ذخیره شد');
+        logSystemAction('ذخیره منو/دستگاه', `${isTimer ? 'دستگاه' : 'آیتم'} ${name} ذخیره شد`);
+        bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
+        await silentRefreshData();
+        broadcastGlobalSync();
+    } catch (err) {
+        console.error('Save menu error:', err);
+        toast('خطا در ذخیره‌سازی', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+}; error } = await supa.from('menu_items').update(payload).eq('id', id));
         } else {
             ({ error } = await supa.from('menu_items').insert([payload]));
         }
@@ -915,12 +1033,13 @@ function renderSettlement() {
         `).join('');
 
         return `
-            <div class="invoice-card">
-                <div class="invoice-header">
+            <div class="invoice-card position-relative">
+                <button class="btn btn-sm btn-outline-danger border-0 position-absolute" style="top:12px;left:12px;width:28px;height:28px;padding:0;line-height:1;border-radius:50%;" title="لغو سفارشات" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i></button>
+                <div class="invoice-header pe-4">
                     <div>
                         <strong class="fs-5 text-dark"><i class="fas fa-user-circle text-primary me-1"></i> ${escapeHtml(custName)}</strong>
                     </div>
-                    <div class="text-end">
+                    <div class="text-end me-4">
                         <div class="fs-5 fw-bold text-success">${formatPrice(g.total)} تومان</div>
                         <small class="text-muted">${g.ids.length} فاکتور معلق</small>
                     </div>
@@ -936,9 +1055,9 @@ function renderSettlement() {
                 </div>
 
                 <div class="d-flex gap-2">
-                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> تسویه نقدی</button>
-                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> تسویه کارتخوان</button>
-                    <button class="btn btn-outline-danger" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i> لغو</button>
+                    <button class="btn btn-success-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "نقدی", "${escapeHtml(custName)}")'><i class="fas fa-money-bill-wave me-1"></i> نقدی</button>
+                    <button class="btn btn-primary-custom flex-fill py-2" onclick='settleCustomerGroup(${idsJson}, "کارت‌خوان", "${escapeHtml(custName)}")'><i class="fas fa-credit-card me-1"></i> کارت‌خوان</button>
+                    <button class="btn btn-info text-white flex-fill py-2" style="background-color:#0dcaf0;border-color:#0dcaf0;" onclick='settleCustomerGroup(${idsJson}, "انتقال", "${escapeHtml(custName)}")'><i class="fas fa-exchange-alt me-1"></i> انتقال</button>
                 </div>
             </div>
         `;

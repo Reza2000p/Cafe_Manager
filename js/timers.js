@@ -16,14 +16,36 @@ function findActivePlayerAnywhere(customerName) {
     return null;
 }
 
-// Helper: Get exact hourly rate of a device from menu
-function getDeviceHourlyRate(device) {
+// Helper: Get exact total hourly rate of a device from menu (Fixed vs Variable Tiered Rate)
+function getDeviceTotalHourlyRate(device, playerCount = 1) {
     if (!device) return 0;
+    const count = Math.max(1, playerCount);
+    
+    // Variable Tiered Rate Model
+    if (device.rate_type === 'variable' && device.tiered_rates && typeof device.tiered_rates === 'object') {
+        if (device.tiered_rates[count] !== undefined && Number(device.tiered_rates[count]) > 0) {
+            return Number(device.tiered_rates[count]);
+        }
+        const keys = Object.keys(device.tiered_rates).map(Number).sort((a, b) => a - b);
+        if (keys.length > 0) {
+            const highestKey = keys[keys.length - 1];
+            const lowestKey = keys[0];
+            if (count >= highestKey) return Number(device.tiered_rates[highestKey] || 0);
+            if (count <= lowestKey) return Number(device.tiered_rates[lowestKey] || 0);
+        }
+    }
+    
+    // Fixed Rate Model (or default fallback)
     const hRate = Number(device.hourly_rate);
     if (!isNaN(hRate) && hRate > 0) return hRate;
     const pRate = Number(device.price);
     if (!isNaN(pRate) && pRate > 0) return pRate;
     return 0;
+}
+
+// Helper: Get hourly rate for a single player display
+function getDeviceHourlyRate(device) {
+    return getDeviceTotalHourlyRate(device, 1);
 }
 
 // Helper: Update accumulated costs of all active players on a device before changing player count
@@ -33,14 +55,25 @@ async function updateDeviceActivePlayersSegments(deviceId) {
     const playerCount = activePlayers.length;
     if (playerCount === 0) return;
 
+    const device = localMenu.find(m => m.id === deviceId && m.is_timer);
+    const isVariable = device && device.rate_type === 'variable';
+    const totalHourlyRate = getDeviceTotalHourlyRate(device, playerCount);
+
     const now = new Date();
     for (const p of activePlayers) {
         const segStart = new Date(p.current_segment_start || p.start_time);
         const elapsedSecs = Math.max(0, (now - segStart) / 1000);
         if (elapsedSecs > 0) {
             const segHours = elapsedSecs / 3600;
-            const segTotalCost = (segHours * (p.hourly_rate || 0)) / playerCount;
-            p.accumulated_cost = (p.accumulated_cost || 0) + segTotalCost;
+            let segCostPerPlayer = 0;
+            if (isVariable) {
+                segCostPerPlayer = (segHours * totalHourlyRate) / playerCount;
+            } else {
+                // Fixed rate: each player pays the hourly rate per person independently
+                const personRate = getDeviceTotalHourlyRate(device, 1);
+                segCostPerPlayer = segHours * personRate;
+            }
+            p.accumulated_cost = (p.accumulated_cost || 0) + segCostPerPlayer;
             p.accumulated_seconds = (p.accumulated_seconds || 0) + elapsedSecs;
         }
         p.current_segment_start = now.toISOString();
@@ -131,7 +164,7 @@ async function startDevicePlayer(deviceId, customerName) {
     return true;
 }
 
-// End a player's session on a device with RACE CONDITION PROTECTION
+// End a player's session on a device with RACE CONDITION PROTECTION & AUTHORITATIVE DB SYNC
 async function stopDevicePlayer(deviceId, customerName) {
     if (!deviceSessions[deviceId]) return null;
     const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
@@ -143,26 +176,35 @@ async function stopDevicePlayer(deviceId, customerName) {
 
     const playerSession = deviceSessions[deviceId][playerIndex];
 
-    // RACE CONDITION CHECK WITH SUPABASE DB
+    // AUTHORITATIVE SYNC WITH SUPABASE DB TO PREVENT CROSS-ACCOUNT TIME DRIFT BUGS
     if (supa) {
         try {
-            const { data: dbCheck } = await supa.from('active_timer_sessions').select('id').eq('id', playerSession.id);
-            if (!dbCheck || !dbCheck.length) {
+            const { data: dbCheck } = await supa.from('active_timer_sessions').select('*').eq('id', playerSession.id).single();
+            if (!dbCheck) {
                 toast(`بازی «${customerName}» قبلاً روی دستگاه دیگری پایان یافته و به تسویه منتقل شده است.`, 'info');
                 if (typeof silentRefreshData === 'function') await silentRefreshData();
                 return null;
             }
+            // Overwrite local fields with true DB record values created by the starting account
+            if (dbCheck.start_time) playerSession.start_time = dbCheck.start_time;
+            if (dbCheck.current_segment_start) playerSession.current_segment_start = dbCheck.current_segment_start;
+            if (dbCheck.accumulated_cost !== undefined) playerSession.accumulated_cost = Number(dbCheck.accumulated_cost || 0);
+            if (dbCheck.accumulated_seconds !== undefined) playerSession.accumulated_seconds = Number(dbCheck.accumulated_seconds || 0);
         } catch(e){}
     }
 
     await updateDeviceActivePlayersSegments(deviceId);
 
-    const nowIso = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
     playerSession.end_time = nowIso;
 
+    // Compute exact total duration in minutes directly from original start_time
+    const origStart = new Date(playerSession.start_time);
+    const actualTotalSecs = Math.max(1, Math.floor((now - origStart) / 1000));
+    const durationMins = Math.max(1, Math.round(actualTotalSecs / 60));
+
     const finalCost = Math.round(playerSession.accumulated_cost || 0);
-    const totalSecs = playerSession.accumulated_seconds || 0;
-    const durationMins = Math.max(1, Math.round(totalSecs / 60));
 
     playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
@@ -193,11 +235,24 @@ function getActivePlayerCountOnDevice(deviceId) {
 function getPlayerLiveCost(playerSession, deviceId) {
     if (!playerSession) return 0;
     const activeCount = Math.max(1, getActivePlayerCountOnDevice(deviceId));
+    const device = localMenu.find(m => m.id === deviceId && m.is_timer);
+    const isVariable = device && device.rate_type === 'variable';
+    const totalHourlyRate = getDeviceTotalHourlyRate(device, activeCount);
+
     const now = new Date();
     const segStart = new Date(playerSession.current_segment_start || playerSession.start_time);
     const elapsedSecs = Math.max(0, (now - segStart) / 1000);
     const currentSegHours = elapsedSecs / 3600;
-    const currentSegCost = (currentSegHours * (playerSession.hourly_rate || 0)) / activeCount;
+
+    let currentSegCost = 0;
+    if (isVariable) {
+        currentSegCost = (currentSegHours * totalHourlyRate) / activeCount;
+    } else {
+        const personRate = getDeviceTotalHourlyRate(device, 1);
+        currentSegCost = currentSegHours * personRate;
+    }
+    return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
+}
     return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
 }
 
@@ -335,13 +390,19 @@ function updateLiveDeviceCardsUI() {
             playersHTML = '<div class="text-muted small py-2">هیچ بازیکنی روی این دستگاه نیست</div>';
         }
 
+        const isVar = device.rate_type === 'variable';
+        const totalDevRate = isVar ? getDeviceTotalHourlyRate(device, players.length || 1) : getDeviceTotalHourlyRate(device, 1);
+        const rateLabelHTML = isVar 
+            ? `نرخ متغیر (${players.length || 1} نفره): <strong>${formatPrice(totalDevRate)} تومان</strong> (تقسیم بین ${players.length || 1} نفر)`
+            : `نرخ ثابت: <strong>${formatPrice(totalDevRate)} تومان/ساعت</strong> (به ازای هر نفر)`;
+
         return `
             <div class="device-card ${isActive ? 'active' : ''}">
                 <div class="device-header">
                     <div class="device-title"><i class="fas fa-gamepad text-primary"></i> ${escapeHtml(device.name)}</div>
                     <span class="device-status-badge ${isActive ? 'badge-active' : 'badge-free'}">${isActive ? `${players.length} بازیکن فعال` : 'آزاد'}</span>
                 </div>
-                <div class="device-rate"><i class="fas fa-clock text-secondary me-1"></i> نرخ هر ساعت: <strong>${formatPrice(rate)} تومان</strong> (تقسیم به ${players.length || 1} نفر)</div>
+                <div class="device-rate"><i class="fas fa-clock text-secondary me-1"></i> ${rateLabelHTML}</div>
                 <div class="players-list">${playersHTML}</div>
                 <div class="device-actions">
                     <button class="btn btn-sm btn-primary-custom flex-fill" onclick="addPlayerClick(${device.id})"><i class="fas fa-user-plus me-1"></i> افزودن بازیکن</button>
