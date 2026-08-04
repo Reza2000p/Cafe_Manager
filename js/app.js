@@ -538,7 +538,11 @@ function renderDashboard() {
     document.getElementById('topCustomersList').innerHTML = topCust.length ? topCust.map(i => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>${escapeHtml(i[0])}</span> <span class="fw-bold text-success">${formatPrice(i[1])} ت</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
 
     // Recent Orders
-    const re// 5. MENU & CATEGORIES MANAGEMENT
+    const recent = settledOrders.slice(0, 5);
+    document.getElementById('recentOrders').innerHTML = recent.length ? recent.map(o => `<div class="d-flex justify-content-between border-bottom py-2 small"><span>#${o.id} ${escapeHtml(o.customer_name)}</span><span class="fw-bold">${formatPrice(o.total)}</span></div>`).join('') : '<div class="empty-state">داده‌ای نیست</div>';
+}
+
+// 5. MENU & CATEGORIES MANAGEMENT
 function sortMenuItemsByCategory(items) {
     const catOrderMap = {};
     localCats.forEach((cat, index) => {
@@ -750,22 +754,6 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
         let error;
         if (id) {
             ({ error } = await supa.from('menu_items').update(payload).eq('id', id));
-        } else {
-            ({ error } = await supa.from('menu_items').insert([payload]));
-        }
-        if (error) throw error;
-        toast('اطلاعات با موفقیت ذخیره شد');
-        logSystemAction('ذخیره منو/دستگاه', `${isTimer ? 'دستگاه' : 'آیتم'} ${name} ذخیره شد`);
-        bootstrap.Modal.getInstance(document.getElementById('menuModal')).hide();
-        await silentRefreshData();
-        broadcastGlobalSync();
-    } catch (err) {
-        console.error('Save menu error:', err);
-        toast('خطا در ذخیره‌سازی', 'danger');
-    } finally {
-        uiLoading(false);
-    }
-}; error } = await supa.from('menu_items').update(payload).eq('id', id));
         } else {
             ({ error } = await supa.from('menu_items').insert([payload]));
         }

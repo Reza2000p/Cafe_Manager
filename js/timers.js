@@ -249,10 +249,6 @@ function getPlayerLiveCost(playerSession, deviceId) {
         currentSegCost = (currentSegHours * totalHourlyRate) / activeCount;
     } else {
         const personRate = getDeviceTotalHourlyRate(device, 1);
-        currentSegCost = currentSegHours * personRate;
-    }
-    return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
-}
     return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
 }
 
