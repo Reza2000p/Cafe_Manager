@@ -5,7 +5,26 @@
 body { background: #f4f6fa; padding-bottom: 85px; font-size: 0.9rem; color: #2c3e50; margin: 0; }
 
 .app-header { background: linear-gradient(135deg, #1e1e2f 0%, #2d2a7e 100%); color: white; padding: 14px 20px; box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15); position: sticky; top: 0; z-index: 1000; border-radius: 0 0 24px 24px; }
-.brand { font-size: 1.25rem; font-weight: 700; }
+.brand { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.header-logo {
+    height: 36px;
+    width: 36px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    vertical-align: middle;
+    background-color: #ffffff;
+}
+.login-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 3px solid #2d2a7e;
+    box-shadow: 0 4px 14px rgba(45, 42, 126, 0.2);
+    background-color: #ffffff;
+}
 .user-info { font-size: 0.85rem; opacity: 0.95; }
 .user-info a { color: #ffd966; text-decoration: none; font-weight: 500; margin-right: 8px; }
 
