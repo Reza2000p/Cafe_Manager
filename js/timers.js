@@ -208,7 +208,8 @@ async function stopDevicePlayer(deviceId, customerName) {
     const actualTotalSecs = Math.max(1, Math.floor((now - origStart) / 1000));
     const durationMins = Math.max(1, Math.round(actualTotalSecs / 60));
 
-    const finalCost = Math.round(playerSession.accumulated_cost || 0);
+    // BULLETPROOF FINAL COST CALCULATION (Prevents accumulated_cost DB desync zero/low-cost bugs)
+    const finalCost = calculatePlayerCost(playerSession, deviceId, now);
 
     playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
@@ -246,27 +247,50 @@ function getActivePlayerCountOnDevice(deviceId) {
     return deviceSessions[deviceId].filter(p => !p.end_time).length;
 }
 
+// UNIFIED BULLETPROOF COST CALCULATOR (FOR LIVE UI & FINAL SETTLEMENT)
+function calculatePlayerCost(playerSession, deviceId, targetTime = new Date()) {
+    if (!playerSession) return 0;
+    const device = localMenu.find(m => m.id === deviceId && m.is_timer);
+    if (!device) return 0;
+
+    const now = new Date(targetTime);
+    const origStart = new Date(playerSession.start_time);
+    const totalElapsedSecs = Math.max(0, (now - origStart) / 1000);
+    const totalElapsedHours = totalElapsedSecs / 3600;
+
+    const isVariable = device.rate_type === 'variable';
+
+    if (!isVariable) {
+        // FIXED RATE MODEL: ALWAYS STRICTLY CALCULATED FROM ORIGINAL START_TIME!
+        // Prevents any DB desync or segment reset from wiping out cost!
+        const personRate = getDeviceTotalHourlyRate(device, 1);
+        return Math.round(totalElapsedHours * personRate);
+    } else {
+        // VARIABLE RATE MODEL:
+        const activeCount = Math.max(1, getActivePlayerCountOnDevice(deviceId));
+        const totalHourlyRate = getDeviceTotalHourlyRate(device, activeCount);
+        const personRateInSeg = totalHourlyRate / activeCount;
+
+        const segStart = new Date(playerSession.current_segment_start || playerSession.start_time);
+        const segElapsedSecs = Math.max(0, (now - segStart) / 1000);
+        const segHours = segElapsedSecs / 3600;
+        const currentSegCost = segHours * personRateInSeg;
+
+        const accumCost = Number(playerSession.accumulated_cost || 0);
+
+        // Safety fallback: If accumulated_cost is 0 or less, but segment start moved forward,
+        // calculate directly from original start_time to prevent zero/low-cost bugs!
+        if (accumCost <= 0 && segStart > origStart) {
+            return Math.round(totalElapsedHours * personRateInSeg);
+        }
+
+        return Math.round(accumCost + currentSegCost);
+    }
+}
+
 // Calculate live cost for an active player
 function getPlayerLiveCost(playerSession, deviceId) {
-    if (!playerSession) return 0;
-    const activeCount = Math.max(1, getActivePlayerCountOnDevice(deviceId));
-    const device = localMenu.find(m => m.id === deviceId && m.is_timer);
-    const isVariable = device && device.rate_type === 'variable';
-    const totalHourlyRate = getDeviceTotalHourlyRate(device, activeCount);
-
-    const now = new Date();
-    const segStart = new Date(playerSession.current_segment_start || playerSession.start_time);
-    const elapsedSecs = Math.max(0, (now - segStart) / 1000);
-    const currentSegHours = elapsedSecs / 3600;
-
-    let currentSegCost = 0;
-    if (isVariable) {
-        currentSegCost = (currentSegHours * totalHourlyRate) / activeCount;
-    } else {
-        const personRate = getDeviceTotalHourlyRate(device, 1);
-        currentSegCost = currentSegHours * personRate;
-    }
-    return Math.round((playerSession.accumulated_cost || 0) + currentSegCost);
+    return calculatePlayerCost(playerSession, deviceId, new Date());
 }
 
 // Attach finished timer session to customer's pending order in localOrders & Supabase
