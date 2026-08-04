@@ -736,24 +736,33 @@ window.deleteMenu = async function(id) {
 };
 
 document.getElementById('menuFormSave').addEventListener('click', async () => {
-    const id = document.getElementById('menuFormId').value;
-    const isTimer = document.getElementById('menuFormIsTimer').value === 'true';
-    const name = document.getElementById('menuFormName').value.trim();
-    const cat = document.getElementById('menuFormCat').value;
-    const displayOrder = parseInt(document.getElementById('menuFormDisplayOrder').value) || 0;
+    const getValStr = (elId) => {
+        const el = document.getElementById(elId);
+        return el ? el.value.trim() : '';
+    };
+    const getValInt = (elId) => {
+        const el = document.getElementById(elId);
+        return el ? (parseInt(el.value) || 0) : 0;
+    };
 
-    let price = parseInt(document.getElementById('menuFormPrice').value);
+    const id = getValStr('menuFormId');
+    const isTimer = getValStr('menuFormIsTimer') === 'true';
+    const name = getValStr('menuFormName');
+    const cat = getValStr('menuFormCat');
+    const displayOrder = getValInt('menuFormDisplayOrder');
+
+    let price = getValInt('menuFormPrice');
     let rateType = 'fixed';
     let tieredRates = null;
 
     if (isTimer) {
-        rateType = document.getElementById('menuFormRateType').value;
+        rateType = getValStr('menuFormRateType') || 'fixed';
         if (rateType === 'variable') {
             tieredRates = {
-                "1": parseInt(document.getElementById('tierRate1').value) || 0,
-                "2": parseInt(document.getElementById('tierRate2').value) || 0,
-                "3": parseInt(document.getElementById('tierRate3').value) || 0,
-                "4": parseInt(document.getElementById('tierRate4').value) || 0
+                "1": getValInt('tierRate1'),
+                "2": getValInt('tierRate2'),
+                "3": getValInt('tierRate3'),
+                "4": getValInt('tierRate4')
             };
             price = tieredRates["1"] || 0;
         }
