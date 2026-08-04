@@ -7,6 +7,8 @@ const STATIC_ASSETS = [
     './',
     './index.html?v=20260804_v7',
     './manifest.json',
+    './icon-192.png',
+    './icon-512.png',
     './css/styles.css?v=20260804_v7',
     './js/config.js?v=20260804_v7',
     './js/timers.js?v=20260804_v7',
