@@ -1209,6 +1209,21 @@ window.setHistDate = function(mode, btnEl) {
     renderHistory();
 };
 
+function getPaymentStatusBadge(status) {
+    const st = String(status || '').trim();
+    if (st === 'نقدی') {
+        return `<span class="badge bg-success ms-2"><i class="fas fa-money-bill-wave me-1"></i>نقدی</span>`;
+    } else if (st === 'کارت‌خوان' || st === 'کارت') {
+        return `<span class="badge bg-primary ms-2"><i class="fas fa-credit-card me-1"></i>کارت‌خوان</span>`;
+    } else if (st === 'انتقال') {
+        return `<span class="badge text-white ms-2" style="background-color:#0dcaf0;"><i class="fas fa-exchange-alt me-1"></i>انتقال</span>`;
+    } else if (st === 'لغو' || st === 'لغو شده') {
+        return `<span class="badge bg-danger ms-2"><i class="fas fa-times-circle me-1"></i>لغو شده</span>`;
+    } else {
+        return `<span class="badge bg-secondary ms-2">${escapeHtml(st || 'معلق')}</span>`;
+    }
+}
+
 function renderHistoryOrderCard(o) {
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
@@ -1246,7 +1261,7 @@ function renderHistoryOrderCard(o) {
                 </div>
                 <div class="text-end">
                     <span class="fw-bold text-success fs-6">${formatPrice(o.total)} تومان</span>
-                    <span class="badge ${o.status === 'نقدی' ? 'bg-success' : o.status === 'کارت' ? 'bg-info' : 'bg-danger'} ms-2">${escapeHtml(o.status)}</span>
+                    ${getPaymentStatusBadge(o.status)}
                 </div>
             </div>
 
@@ -1265,6 +1280,20 @@ function renderHistoryOrderCard(o) {
     `;
 }
 
+function filterHistoryByPaymentMethod(orders, payF) {
+    if (!payF) return orders;
+    return orders.filter(o => {
+        const st = String(o.status || '').trim();
+        if (payF === 'کارت‌خوان' || payF === 'کارت') {
+            return st === 'کارت‌خوان' || st === 'کارت';
+        }
+        if (payF === 'لغو' || payF === 'لغو شده') {
+            return st === 'لغو' || st === 'لغو شده';
+        }
+        return st === payF;
+    });
+}
+
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
     const fromD = document.getElementById('histDateFrom')?.value;
@@ -1275,7 +1304,7 @@ function renderHistory() {
         const userF = document.getElementById('histCreatedUserFilter')?.value;
 
         let filtered = localOrders.filter(o => o.status !== 'معلق');
-        if (payF) filtered = filtered.filter(o => o.status === payF);
+        filtered = filterHistoryByPaymentMethod(filtered, payF);
         if (userF) filtered = filtered.filter(o => o.created_by === userF);
 
         if (fromD) {
@@ -1293,7 +1322,7 @@ function renderHistory() {
         const userF = document.getElementById('histSettledUserFilter')?.value;
 
         let filtered = localOrders.filter(o => o.status !== 'معلق');
-        if (payF) filtered = filtered.filter(o => o.status === payF);
+        filtered = filterHistoryByPaymentMethod(filtered, payF);
         if (userF) filtered = filtered.filter(o => o.settled_by === userF);
 
         if (fromD) {
@@ -1385,7 +1414,8 @@ function renderReports() {
     if (activeSubTab === 'sales') {
         const totalRev = orders.reduce((s, o) => s + (o.total || 0), 0);
         const totalCash = orders.filter(o => o.status === 'نقدی').reduce((s, o) => s + (o.total || 0), 0);
-        const totalCard = orders.filter(o => o.status === 'کارت').reduce((s, o) => s + (o.total || 0), 0);
+        const totalCard = orders.filter(o => o.status === 'کارت‌خوان' || o.status === 'کارت').reduce((s, o) => s + (o.total || 0), 0);
+        const totalTransfer = orders.filter(o => o.status === 'انتقال').reduce((s, o) => s + (o.total || 0), 0);
 
         let staticRev = 0;
         let timerRev = 0;
@@ -1421,7 +1451,8 @@ function renderReports() {
                 <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>درآمد ثابت‌ها (بوفه):</span> <strong class="text-info">${formatPrice(staticRev)} تومان</strong></div>
                 <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>درآمد تایمری‌ها (دستگاه‌ها):</span> <strong class="text-warning">${formatPrice(timerRev)} تومان</strong></div>
                 <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه نقدی:</span> <strong class="text-success">${formatPrice(totalCash)} تومان</strong></div>
-                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه کارتخوان:</span> <strong class="text-primary">${formatPrice(totalCard)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه کارت‌خوان:</span> <strong class="text-primary">${formatPrice(totalCard)} تومان</strong></div>
+                <div class="d-flex justify-content-between mb-2 border-bottom pb-2"><span>مجموع تسویه کارت‌به‌کارت / انتقال:</span> <strong style="color:#0dcaf0;">${formatPrice(totalTransfer)} تومان</strong></div>
                 <div class="d-flex justify-content-between mt-3 fs-5 border-bottom pb-2 mb-3"><span>کل درآمد:</span> <strong class="text-primary">${formatPrice(totalRev)} تومان</strong></div>
                 
                 <h6 class="fw-bold mt-3 text-dark"><i class="fas fa-utensils text-info me-1"></i> پرفروش‌ترین اقلام بوفه (به ترتیب درآمد):</h6>
