@@ -49,7 +49,7 @@ function getDeviceHourlyRate(device) {
 }
 
 // Helper: Update accumulated costs of all active players on a device before changing player count
-async function updateDeviceActivePlayersSegments(deviceId) {
+async function updateDeviceActivePlayersSegments(deviceId, customTime = null) {
     if (!deviceSessions[deviceId] || !deviceSessions[deviceId].length) return;
     const activePlayers = deviceSessions[deviceId].filter(p => !p.end_time);
     const playerCount = activePlayers.length;
@@ -59,7 +59,7 @@ async function updateDeviceActivePlayersSegments(deviceId) {
     const isVariable = device && device.rate_type === 'variable';
     const totalHourlyRate = getDeviceTotalHourlyRate(device, playerCount);
 
-    const now = new Date();
+    const now = customTime ? new Date(customTime) : new Date();
     for (const p of activePlayers) {
         const segStart = new Date(p.current_segment_start || p.start_time);
         const elapsedSecs = Math.max(0, (now - segStart) / 1000);
@@ -91,7 +91,7 @@ async function updateDeviceActivePlayersSegments(deviceId) {
 }
 
 // Add a player to a timer device with Supabase Persistence & Unique Name Check
-async function startDevicePlayer(deviceId, customerName) {
+async function startDevicePlayer(deviceId, customerName, customStartTime = null) {
     if (!deviceId || !customerName || !customerName.trim()) return false;
     const cleanName = customerName.trim();
 
@@ -129,9 +129,9 @@ async function startDevicePlayer(deviceId, customerName) {
         deviceSessions[deviceId] = [];
     }
 
-    await updateDeviceActivePlayersSegments(deviceId);
+    await updateDeviceActivePlayersSegments(deviceId, customStartTime);
 
-    const nowIso = new Date().toISOString();
+    const nowIso = customStartTime ? new Date(customStartTime).toISOString() : new Date().toISOString();
     const sessionObj = {
         id: Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         device_id: deviceId,
@@ -165,7 +165,7 @@ async function startDevicePlayer(deviceId, customerName) {
 }
 
 // End a player's session on a device with RACE CONDITION PROTECTION & AUTHORITATIVE DB SYNC
-async function stopDevicePlayer(deviceId, customerName) {
+async function stopDevicePlayer(deviceId, customerName, customEndTime = null) {
     if (!deviceSessions[deviceId]) return null;
     const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
     if (playerIndex === -1) {
@@ -197,9 +197,9 @@ async function stopDevicePlayer(deviceId, customerName) {
         }
     }
 
-    await updateDeviceActivePlayersSegments(deviceId);
+    await updateDeviceActivePlayersSegments(deviceId, customEndTime);
 
-    const now = new Date();
+    const now = customEndTime ? new Date(customEndTime) : new Date();
     const nowIso = now.toISOString();
     playerSession.end_time = nowIso;
 
@@ -534,8 +534,9 @@ async function stopAllDevicePlayersClick(deviceId, deviceName) {
     try {
         let endedCount = 0;
         const names = activePlayers.map(p => p.customer_name);
+        const sharedEndTime = new Date().toISOString();
         for (const name of names) {
-            const ended = await stopDevicePlayer(deviceId, name);
+            const ended = await stopDevicePlayer(deviceId, name, sharedEndTime);
             if (ended) endedCount++;
         }
         toast(`بازی تمامی ${endedCount} بازیکن دستگاه «${deviceName}» به پایان رسید.`);
@@ -630,8 +631,9 @@ function addGroupPlayersClick(deviceId, deviceName) {
 
             try {
                 let successCount = 0;
+                const sharedStartTime = new Date().toISOString();
                 for (const name of namesToStart) {
-                    const added = await startDevicePlayer(deviceId, name);
+                    const added = await startDevicePlayer(deviceId, name, sharedStartTime);
                     if (added) successCount++;
                 }
                 toast(`بازی ${successCount} بازیکن به طور هم‌زمان روی دستگاه «${deviceName}» شروع شد.`);
