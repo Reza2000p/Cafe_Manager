@@ -453,12 +453,16 @@ function updateLiveDeviceCardsUI() {
             <div class="device-card ${isActive ? 'active' : ''}">
                 <div class="device-header">
                     <div class="device-title"><i class="fas fa-gamepad text-primary"></i> ${escapeHtml(device.name)}</div>
-                    <span class="device-status-badge ${isActive ? 'badge-active' : 'badge-free'}">${isActive ? `${players.length} بازیکن فعال` : 'آزاد'}</span>
+                    <div class="d-flex align-items-center gap-2">
+                        ${isActive ? `<button class="btn btn-sm btn-outline-danger py-0 px-2 small" style="font-size:0.75rem;border-radius:8px;" onclick="stopAllDevicePlayersClick(${device.id}, '${escapeHtml(device.name)}')"><i class="fas fa-power-off me-1"></i> پایان همه</button>` : ''}
+                        <span class="device-status-badge ${isActive ? 'badge-active' : 'badge-free'}">${isActive ? `${players.length} بازیکن فعال` : 'آزاد'}</span>
+                    </div>
                 </div>
                 <div class="device-rate"><i class="fas fa-clock text-secondary me-1"></i> ${rateLabelHTML}</div>
                 <div class="players-list">${playersHTML}</div>
-                <div class="device-actions">
+                <div class="device-actions d-flex gap-2">
                     <button class="btn btn-sm btn-primary-custom flex-fill" onclick="addPlayerClick(${device.id})"><i class="fas fa-user-plus me-1"></i> افزودن بازیکن</button>
+                    <button class="btn btn-sm btn-outline-primary flex-fill" style="border-radius:12px;" onclick="addGroupPlayersClick(${device.id}, '${escapeHtml(device.name)}')"><i class="fas fa-users me-1"></i> افزودن گروهی</button>
                 </div>
             </div>
         `;
@@ -512,3 +516,138 @@ async function stopPlayerClick(deviceId, customerName) {
     }
 }
 window.stopPlayerClick = stopPlayerClick;
+
+// STOP ALL PLAYERS ON DEVICE
+async function stopAllDevicePlayersClick(deviceId, deviceName) {
+    if (!deviceSessions[deviceId] || !deviceSessions[deviceId].length) return;
+    const activePlayers = deviceSessions[deviceId].filter(p => !p.end_time);
+    if (!activePlayers.length) return;
+
+    const count = activePlayers.length;
+    const confirm = await showConfirmModal(
+        'تأیید پایان همه بازی‌ها',
+        `آیا از پایان هم‌زمان بازی تمامی ${count} بازیکن روی دستگاه «${deviceName}» اطمینان دارید؟`
+    );
+    if (!confirm) return;
+
+    uiLoading(true);
+    try {
+        let endedCount = 0;
+        const names = activePlayers.map(p => p.customer_name);
+        for (const name of names) {
+            const ended = await stopDevicePlayer(deviceId, name);
+            if (ended) endedCount++;
+        }
+        toast(`بازی تمامی ${endedCount} بازیکن دستگاه «${deviceName}» به پایان رسید.`);
+        if (typeof silentRefreshData === 'function') await silentRefreshData();
+    } catch (err) {
+        console.error('Error stopping all players:', err);
+        toast('خطا در پایان دستجمعی بازی‌ها', 'danger');
+    } finally {
+        uiLoading(false);
+    }
+}
+window.stopAllDevicePlayersClick = stopAllDevicePlayersClick;
+
+// BATCH / GROUP ADD PLAYERS MODAL LOGIC
+let currentGroupAddCandidates = [];
+
+function renderGroupAddCandidates() {
+    const container = document.getElementById('groupAddCandidatesContainer');
+    if (!container) return;
+    
+    if (!currentGroupAddCandidates.length) {
+        container.innerHTML = '<span class="text-muted small italic w-100 text-center py-2" id="groupAddEmptyHint">هنوز هیچ اسمی اضافه نشده است</span>';
+        return;
+    }
+
+    container.innerHTML = currentGroupAddCandidates.map((name, index) => `
+        <span class="badge bg-primary text-white p-2 d-inline-flex align-items-center gap-2 rounded-3 fs-6 shadow-sm">
+            <i class="fas fa-user me-1"></i> ${escapeHtml(name)}
+            <button type="button" class="btn-close btn-close-white" style="font-size:0.65rem;" onclick="removeGroupAddCandidate(${index})"></button>
+        </span>
+    `).join('');
+}
+
+window.removeGroupAddCandidate = function(index) {
+    if (index >= 0 && index < currentGroupAddCandidates.length) {
+        currentGroupAddCandidates.splice(index, 1);
+        renderGroupAddCandidates();
+    }
+};
+
+function addGroupPlayersClick(deviceId, deviceName) {
+    currentGroupAddCandidates = [];
+    renderGroupAddCandidates();
+
+    const titleEl = document.getElementById('groupAddModalTitle');
+    if (titleEl) titleEl.innerHTML = `<i class="fas fa-users text-primary me-2"></i>افزودن گروهی - ${escapeHtml(deviceName)}`;
+    
+    const inputEl = document.getElementById('groupAddInputName');
+    if (inputEl) inputEl.value = '';
+
+    const modalEl = document.getElementById('groupAddModal');
+    if (!modalEl) return;
+    const modal = new bootstrap.Modal(modalEl);
+
+    const appendBtn = document.getElementById('groupAddAppendBtn');
+    const submitBtn = document.getElementById('groupAddSubmitBtn');
+
+    const handleAppend = () => {
+        const val = inputEl.value.trim();
+        if (val) {
+            if (currentGroupAddCandidates.includes(val)) {
+                toast(`نام «${val}» قبلاً در لیست انتخاب شده قرار دارد`, 'warning');
+            } else {
+                currentGroupAddCandidates.push(val);
+                renderGroupAddCandidates();
+                inputEl.value = '';
+                inputEl.focus();
+            }
+        }
+    };
+
+    if (appendBtn) appendBtn.onclick = handleAppend;
+    if (inputEl) {
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAppend();
+            }
+        };
+    }
+
+    if (submitBtn) {
+        submitBtn.onclick = async () => {
+            if (!currentGroupAddCandidates.length) {
+                toast('لطفاً حداقل نام یک بازیکن را به لیست اضافه کنید', 'warning');
+                return;
+            }
+
+            const namesToStart = [...currentGroupAddCandidates];
+            modal.hide();
+            uiLoading(true);
+
+            try {
+                let successCount = 0;
+                for (const name of namesToStart) {
+                    const added = await startDevicePlayer(deviceId, name);
+                    if (added) successCount++;
+                }
+                toast(`بازی ${successCount} بازیکن به طور هم‌زمان روی دستگاه «${deviceName}» شروع شد.`);
+                if (typeof silentRefreshData === 'function') await silentRefreshData();
+            } catch(err) {
+                console.error('Error in group start:', err);
+                toast('خطا در شروع بازی گروهی', 'danger');
+            } finally {
+                uiLoading(false);
+            }
+        };
+    }
+
+    modal.show();
+    setTimeout(() => {
+        if (inputEl) inputEl.focus();
+    }, 400);
+}
+window.addGroupPlayersClick = addGroupPlayersClick;
