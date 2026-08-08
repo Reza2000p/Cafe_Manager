@@ -38,13 +38,60 @@ function saveDeviceSessionsToStorage() {
     try { localStorage.setItem('cafe_device_sessions', JSON.stringify(deviceSessions)); } catch(e){}
 }
 
+// ==========================================
+// BULLETPROOF DATE & TIME ZONE UTILITIES (FIXES OLDER PHONES DST & TIME DRIFT)
+// ==========================================
+let globalTimeOffsetMs = 0;
+
+function parseSafeDate(dStr) {
+    if (!dStr) return new Date();
+    if (dStr instanceof Date) return dStr;
+    let formatted = String(dStr).trim().replace(' ', 'T');
+    if (!formatted.includes('Z') && !formatted.includes('+') && !formatted.includes('-')) {
+        formatted += 'Z';
+    }
+    const parsed = new Date(formatted);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function getAdjustedNow() {
+    return new Date(Date.now() + globalTimeOffsetMs);
+}
+
+function formatTehranTime(dateOrStr, options = { hour: '2-digit', minute: '2-digit' }) {
+    const d = parseSafeDate(dateOrStr);
+    return d.toLocaleTimeString('fa-IR', { ...options, timeZone: 'Asia/Tehran' });
+}
+
+function formatTehranDate(dateOrStr) {
+    const d = parseSafeDate(dateOrStr);
+    return d.toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' });
+}
+
+function formatTehranDateTime(dateOrStr) {
+    const d = parseSafeDate(dateOrStr);
+    return `${d.toLocaleDateString('fa-IR', { timeZone: 'Asia/Tehran' })} - ${d.toLocaleTimeString('fa-IR', { timeZone: 'Asia/Tehran', hour: '2-digit', minute: '2-digit' })}`;
+}
+
 // Convert Supabase active_timer_sessions rows array to deviceSessions dictionary
 function parseSupabaseActiveSessions(rows) {
     if (!Array.isArray(rows)) return;
     const dict = {};
+    const localNowMs = Date.now();
+
     rows.forEach(r => {
         const devId = r.device_id;
         if (!dict[devId]) dict[devId] = [];
+
+        const startTimeObj = parseSafeDate(r.start_time);
+        const startTimeMs = startTimeObj.getTime();
+
+        // Auto-detect if start_time is in the future relative to local device clock
+        // If start_time > localNowMs, update globalTimeOffsetMs so live timer ticks instantly!
+        if (startTimeMs > localNowMs + globalTimeOffsetMs) {
+            globalTimeOffsetMs = startTimeMs - localNowMs + 1000;
+        }
+
         dict[devId].push({
             id: r.id,
             device_id: r.device_id,

@@ -59,9 +59,9 @@ async function updateDeviceActivePlayersSegments(deviceId, customTime = null) {
     const isVariable = device && device.rate_type === 'variable';
     const totalHourlyRate = getDeviceTotalHourlyRate(device, playerCount);
 
-    const now = customTime ? new Date(customTime) : new Date();
+    const now = customTime ? parseSafeDate(customTime) : getAdjustedNow();
     for (const p of activePlayers) {
-        const segStart = new Date(p.current_segment_start || p.start_time);
+        const segStart = parseSafeDate(p.current_segment_start || p.start_time);
         const elapsedSecs = Math.max(0, (now - segStart) / 1000);
         if (elapsedSecs > 0) {
             const segHours = elapsedSecs / 3600;
@@ -131,7 +131,7 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
 
     await updateDeviceActivePlayersSegments(deviceId, customStartTime);
 
-    const nowIso = customStartTime ? new Date(customStartTime).toISOString() : new Date().toISOString();
+    const nowIso = customStartTime ? parseSafeDate(customStartTime).toISOString() : getAdjustedNow().toISOString();
     const sessionObj = {
         id: Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         device_id: deviceId,
@@ -199,12 +199,12 @@ async function stopDevicePlayer(deviceId, customerName, customEndTime = null) {
 
     await updateDeviceActivePlayersSegments(deviceId, customEndTime);
 
-    const now = customEndTime ? new Date(customEndTime) : new Date();
+    const now = customEndTime ? parseSafeDate(customEndTime) : getAdjustedNow();
     const nowIso = now.toISOString();
     playerSession.end_time = nowIso;
 
     // Compute exact total duration in minutes directly from original start_time
-    const origStart = new Date(playerSession.start_time);
+    const origStart = parseSafeDate(playerSession.start_time);
     const actualTotalSecs = Math.max(1, Math.floor((now - origStart) / 1000));
     const durationMins = Math.max(1, Math.round(actualTotalSecs / 60));
 
@@ -248,13 +248,13 @@ function getActivePlayerCountOnDevice(deviceId) {
 }
 
 // UNIFIED BULLETPROOF COST CALCULATOR (FOR LIVE UI & FINAL SETTLEMENT)
-function calculatePlayerCost(playerSession, deviceId, targetTime = new Date()) {
+function calculatePlayerCost(playerSession, deviceId, targetTime = getAdjustedNow()) {
     if (!playerSession) return 0;
     const device = localMenu.find(m => m.id === deviceId && m.is_timer);
     if (!device) return 0;
 
-    const now = new Date(targetTime);
-    const origStart = new Date(playerSession.start_time);
+    const now = parseSafeDate(targetTime);
+    const origStart = parseSafeDate(playerSession.start_time);
     const totalElapsedSecs = Math.max(0, (now - origStart) / 1000);
     const totalElapsedHours = totalElapsedSecs / 3600;
 
@@ -271,7 +271,7 @@ function calculatePlayerCost(playerSession, deviceId, targetTime = new Date()) {
         const totalHourlyRate = getDeviceTotalHourlyRate(device, activeCount);
         const personRateInSeg = totalHourlyRate / activeCount;
 
-        const segStart = new Date(playerSession.current_segment_start || playerSession.start_time);
+        const segStart = parseSafeDate(playerSession.current_segment_start || playerSession.start_time);
         const segElapsedSecs = Math.max(0, (now - segStart) / 1000);
         const segHours = segElapsedSecs / 3600;
         const currentSegCost = segHours * personRateInSeg;
@@ -290,17 +290,15 @@ function calculatePlayerCost(playerSession, deviceId, targetTime = new Date()) {
 
 // Calculate live cost for an active player
 function getPlayerLiveCost(playerSession, deviceId) {
-    return calculatePlayerCost(playerSession, deviceId, new Date());
+    return calculatePlayerCost(playerSession, deviceId, getAdjustedNow());
 }
 
 // Attach finished timer session to customer's pending order in localOrders & Supabase
 async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
     let pendingOrder = localOrders.find(o => o.customer_name === customerName && o.status === 'معلق');
     
-    const sDate = new Date(sessionData.start_time);
-    const eDate = new Date(sessionData.end_time);
-    const sTimeStr = sDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-    const eTimeStr = eDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const sTimeStr = formatTehranTime(sessionData.start_time);
+    const eTimeStr = formatTehranTime(sessionData.end_time);
 
     const timerItem = {
         type: 'timer',
@@ -311,38 +309,22 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
         start_time_str: sTimeStr,
         end_time_str: eTimeStr,
         duration_mins: sessionData.final_duration_mins,
-        hourly_rate: sessionData.hourly_rate,
         price: sessionData.final_cost,
-        qty: 1
+        hourly_rate: sessionData.hourly_rate
     };
 
     if (pendingOrder) {
-        if (!pendingOrder.items) pendingOrder.items = [];
-
-        // Deduplication check
-        const isDup = pendingOrder.items.some(it => 
-            (it.type === 'timer' || it.hourly_rate) &&
-            it.device_name === sessionData.device_name &&
-            it.start_time === sessionData.start_time
-        );
-        if (isDup) {
-            console.log('Duplicate timer session ignored in attachTimerSessionToCustomerOrder');
-            return;
-        }
-
         pendingOrder.items.push(timerItem);
         pendingOrder.total = (pendingOrder.total || 0) + sessionData.final_cost;
-        
         if (supa) {
             try {
                 await supa.from('orders').update({
                     items: pendingOrder.items,
                     total: pendingOrder.total
                 }).eq('id', pendingOrder.id);
-            } catch(e) { console.error('Error updating order timer item:', e); }
+            } catch(e){}
         }
     } else {
-        const createdBy = (userProfile && userProfile.full_name) ? userProfile.full_name : (currentUser ? currentUser.email : 'کارمند');
         const newOrder = {
             customer_name: customerName,
             items: [timerItem],
@@ -419,11 +401,11 @@ function updateLiveDeviceCardsUI() {
         let playersHTML = '';
         if (isActive) {
             playersHTML = players.map(p => {
-                const now = new Date();
-                const start = new Date(p.start_time);
+                const now = getAdjustedNow();
+                const start = parseSafeDate(p.start_time);
                 const liveSeconds = Math.max(0, Math.floor((now - start) / 1000));
                 const liveCost = getPlayerLiveCost(p, device.id);
-                const startTimeHMS = start.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const startTimeHMS = formatTehranTime(p.start_time, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
                 return `
                     <div class="player-item">
