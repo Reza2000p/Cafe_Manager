@@ -132,7 +132,9 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
     await updateDeviceActivePlayersSegments(deviceId, customStartTime);
 
     const nowIso = customStartTime ? parseSafeDate(customStartTime).toISOString() : getAdjustedNow().toISOString();
+    const sessionId = Date.now() + '_' + Math.random().toString(36).substr(2, 4);
     const sessionObj = {
+        id: sessionId,
         device_id: deviceId,
         device_name: device.name,
         customer_name: cleanName,
@@ -143,7 +145,7 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
         accumulated_seconds: 0
     };
 
-    deviceSessions[deviceId].push({ ...sessionObj, id: Date.now() + '_' + Math.random().toString(36).substr(2, 4), end_time: null });
+    deviceSessions[deviceId].push({ ...sessionObj, end_time: null });
     saveDeviceSessionsToStorage();
 
     if (supa) {
