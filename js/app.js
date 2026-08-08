@@ -262,18 +262,18 @@ async function silentRefreshData(fullRefresh = false) {
         // SILENTLY RE-RENDER ACTIVE VIEW
         if (activePage === 'page-orders') {
             const activeOrderTab = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
-            if (activeOrderTab === 'timers') updateLiveDeviceCardsUI();
-            if (activeOrderTab === 'settle') renderSettlement();
-            if (activeOrderTab === 'history') renderHistory();
+            if (activeOrderTab === 'timers' && typeof renderLiveDevices === 'function') renderLiveDevices();
+            if (activeOrderTab === 'settle' && typeof renderSettlement === 'function') renderSettlement();
+            if (activeOrderTab === 'history' && typeof renderHistory === 'function') renderHistory();
         } else if (activePage === 'page-dashboard') {
-            renderDashboard();
+            if (typeof renderDashboard === 'function') renderDashboard();
         } else if (activePage === 'page-menu') {
-            renderMenu();
+            if (typeof renderMenu === 'function') renderMenu();
         } else if (activePage === 'page-reports') {
-            renderReports();
+            if (typeof renderReports === 'function') renderReports();
         } else if (activePage === 'page-system') {
-            renderUsers();
-            renderCustomersList();
+            if (typeof renderUsers === 'function') renderUsers();
+            if (typeof renderCustomersList === 'function') renderCustomersList();
         }
     } catch(e) {
         console.error('Silent refresh error:', e);
@@ -287,11 +287,12 @@ let globalChannel = null;
 let realtimePollingInterval = null;
 
 function broadcastGlobalSync() {
-    if (supa && globalChannel) {
+    if (globalChannel) {
         try {
             globalChannel.send({
                 type: 'broadcast',
-                event: 'sync_all'
+                event: 'sync_all',
+                payload: { timestamp: Date.now() }
             });
         } catch(e){}
     }
@@ -306,14 +307,21 @@ function initRealtime() {
     
     globalChannel = supa.channel('global-cafe-channel');
 
-    // 1. Broadcast Listener (Fires INSTANTLY across all devices and phones)
-    globalChannel.on('broadcast', { event: 'sync_all' }, async () => {
-        debouncedSilentRefresh(false);
-    });
+    // 1. Listen to Supabase Postgres DB Table Changes & Broadcast Signals (Instant sync across all devices)
+    globalChannel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'active_timer_sessions' }, () => {
+            debouncedSilentRefresh(false);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+            debouncedSilentRefresh(false);
+        })
+        .on('broadcast', { event: 'sync_all' }, () => {
+            debouncedSilentRefresh(false);
+        });
 
     globalChannel.subscribe();
 
-    // 2. Fallback Polling (Every 45 Seconds) as background safety net
+    // 2. Fallback Polling (Every 15 Seconds) as background safety net
     if (realtimePollingInterval) clearInterval(realtimePollingInterval);
     realtimePollingInterval = setInterval(async () => {
         if (currentUser) {
