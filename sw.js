@@ -1,18 +1,18 @@
 // ==========================================
 // CAFE CLOVER - SERVICE WORKER (NETWORK FIRST & AUTO-UPDATE STRATEGY)
 // ==========================================
-const CACHE_NAME = 'cafe-v8';
+const CACHE_NAME = 'cafe-v9';
 
 const STATIC_ASSETS = [
     './',
-    './index.html?v=20260807_v1',
+    './index.html?v=20260808_v1',
     './manifest.json',
     './icon-192.png',
     './icon-512.png',
-    './css/styles.css?v=20260807_v1',
-    './js/config.js?v=20260807_v1',
-    './js/timers.js?v=20260807_v1',
-    './js/app.js?v=20260807_v1'
+    './css/styles.css?v=20260808_v1',
+    './js/config.js?v=20260808_v1',
+    './js/timers.js?v=20260808_v1',
+    './js/app.js?v=20260808_v1'
 ];
 
 // Install Event: Force immediate SW update

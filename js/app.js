@@ -1515,44 +1515,79 @@ function renderReports() {
             logs = logs.filter(l => l.user_name === logUserF);
         }
 
-        const logContainer = document.querySelector('#logReportContent .table-responsive');
-        const prevScrollLeft = logContainer ? logContainer.scrollLeft : 0;
+        const totalLogs = logs.length;
+        const totalPages = Math.ceil(totalLogs / logPageSize) || 1;
+        if (logCurrentPage > totalPages) logCurrentPage = totalPages;
+        if (logCurrentPage < 1) logCurrentPage = 1;
+
+        const startIndex = (logCurrentPage - 1) * logPageSize;
+        const paginatedLogs = logs.slice(startIndex, startIndex + logPageSize);
+
+        let paginationHTML = '';
+        if (totalPages > 1) {
+            let pageBtns = '';
+            for (let p = 1; p <= totalPages; p++) {
+                if (p === 1 || p === totalPages || (p >= logCurrentPage - 1 && p <= logCurrentPage + 1)) {
+                    pageBtns += `<button class="btn btn-sm ${p === logCurrentPage ? 'btn-primary' : 'btn-outline-secondary'} px-3" onclick="setLogPage(${p})">${p}</button>`;
+                } else if (p === logCurrentPage - 2 || p === logCurrentPage + 2) {
+                    pageBtns += `<span class="px-1 text-muted">...</span>`;
+                }
+            }
+
+            paginationHTML = `
+                <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top flex-wrap gap-2">
+                    <div class="small text-muted">نمایش ${startIndex + 1} تا ${Math.min(startIndex + logPageSize, totalLogs)} از کل ${totalLogs} رویداد</div>
+                    <div class="d-flex align-items-center gap-1">
+                        <button class="btn btn-sm btn-outline-primary px-3" ${logCurrentPage === 1 ? 'disabled' : ''} onclick="setLogPage(${logCurrentPage - 1})"><i class="fas fa-chevron-right me-1"></i> قبلی</button>
+                        ${pageBtns}
+                        <button class="btn btn-sm btn-outline-primary px-3" ${logCurrentPage === totalPages ? 'disabled' : ''} onclick="setLogPage(${logCurrentPage + 1})">بعدی <i class="fas fa-chevron-left ms-1"></i></button>
+                    </div>
+                </div>
+            `;
+        }
 
         document.getElementById('logReportContent').innerHTML = `
-            <div id="printableReport" class="table-responsive mt-3">
-                <table class="log-table">
-                    <thead>
-                        <tr>
-                            <th>تاریخ و زمان</th>
-                            <th>کاربر / پرسنل</th>
-                            <th>نوع رویداد</th>
-                            <th>جزئیات رویداد</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${logs.length ? logs.map(l => {
-                            const d = new Date(l.created_at);
-                            const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-                            return `
-                                <tr>
-                                    <td><small class="text-muted">${dateStr}</small></td>
-                                    <td><strong>${escapeHtml(l.user_name)}</strong></td>
-                                    <td><span class="badge bg-secondary">${escapeHtml(l.action)}</span></td>
-                                    <td>${escapeHtml(l.details)}</td>
-                                </tr>
-                            `;
-                        }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">هیچ رویدادی در این بازه زمانی ثبت نشده است</td></tr>'}
-                    </tbody>
-                </table>
+            <div id="printableReport">
+                <div class="table-responsive mt-3">
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <th>تاریخ و زمان</th>
+                                <th>کاربر / پرسنل</th>
+                                <th>نوع رویداد</th>
+                                <th>جزئیات رویداد</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginatedLogs.length ? paginatedLogs.map(l => {
+                                const d = new Date(l.created_at);
+                                const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+                                return `
+                                    <tr>
+                                        <td><small class="text-muted">${dateStr}</small></td>
+                                        <td><strong>${escapeHtml(l.user_name)}</strong></td>
+                                        <td><span class="badge bg-secondary">${escapeHtml(l.action)}</span></td>
+                                        <td>${escapeHtml(l.details)}</td>
+                                    </tr>
+                                `;
+                            }).join('') : '<tr><td colspan="4" class="text-center text-muted py-3">هیچ رویدادی در این بازه زمانی ثبت نشده است</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                ${paginationHTML}
             </div>
         `;
-
-        const newLogContainer = document.querySelector('#logReportContent .table-responsive');
-        if (newLogContainer && prevScrollLeft) {
-            newLogContainer.scrollLeft = prevScrollLeft;
-        }
     }
 }
+
+let logCurrentPage = 1;
+const logPageSize = 15;
+
+function setLogPage(page) {
+    logCurrentPage = page;
+    renderReports();
+}
+window.setLogPage = setLogPage;
 
 // EXPORT SYSTEM FOR REPORTS (PDF, CSV, TXT)
 window.exportReportPDF = function() {
@@ -1560,12 +1595,9 @@ window.exportReportPDF = function() {
     if (!el) { toast('گزارشی برای چاپ وجود ندارد', 'warning'); return; }
     const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
     const subTabName = activeSubTab === 'sales' ? 'فروش' : activeSubTab === 'devices' ? 'دستگاه‌ها' : 'رویدادها/لاگ‌ها';
-    const pr = window.open('', '', 'height=600,width=800');
-    pr.document.write(`<html dir="rtl"><head><title>چاپ گزارش کافه کلاور</title><style>body{font-family:Vazir,Tahoma,Arial;font-size:13px;padding:20px;line-height:1.6;} .border-bottom{border-bottom:1px solid #ccc;padding-bottom:5px;margin-bottom:5px;} .d-flex{display:flex;justify-content:space-between;} .fw-bold{font-weight:bold;} ul{list-style:none;padding:0;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:right;}</style></head><body><h2>گزارش کافه کلاور</h2>${el.innerHTML}</body></html>`);
-    pr.document.close();
-    pr.focus();
-    setTimeout(() => { pr.print(); pr.close(); }, 500);
-    toast('پنجره چاپ / ذخیره PDF باز شد');
+    
+    window.print();
+    toast('صفحه چاپ / ذخیره PDF باز شد');
     logSystemAction('چاپ/PDF گزارش', `دریافت خروجی PDF از گزارش ${subTabName}`);
 };
 
@@ -1582,11 +1614,51 @@ window.exportReportCSV = function() {
         if (fromD) orders = orders.filter(o => new Date(o.created_at) >= new Date(fromD + 'T00:00:00'));
         if (toD) orders = orders.filter(o => new Date(o.created_at) <= new Date(toD + 'T23:59:59.999'));
 
-        csvContent += "شماره فاکتور,مشتری,مبلغ کل (تومان),روش تسویه,ثبت کننده,تسویه کننده,تاریخ\n";
+        const totalRev = orders.reduce((s, o) => s + (o.total || 0), 0);
+        const totalCash = orders.filter(o => o.status === 'نقدی').reduce((s, o) => s + (o.total || 0), 0);
+        const totalCard = orders.filter(o => o.status === 'کارت‌خوان' || o.status === 'کارت').reduce((s, o) => s + (o.total || 0), 0);
+        const totalTransfer = orders.filter(o => o.status === 'انتقال').reduce((s, o) => s + (o.total || 0), 0);
+
+        let staticRev = 0;
+        let timerRev = 0;
+        let itemsMap = {};
+        let devicesMap = {};
+
         orders.forEach(o => {
-            const d = new Date(o.created_at);
-            const dateStr = d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-            csvContent += `"${o.id}","${o.customer_name || ''}","${o.total || 0}","${o.status || ''}","${o.created_by || ''}","${o.settled_by || ''}","${dateStr}"\n`;
+            (o.items || []).forEach(i => {
+                if (i.type === 'timer' || i.hourly_rate) {
+                    const dName = i.device_name || i.name.replace('بازی ', '');
+                    timerRev += (i.price || 0);
+                    if (!devicesMap[dName]) devicesMap[dName] = { mins: 0, revenue: 0, count: 0 };
+                    devicesMap[dName].mins += (i.duration_mins || 0);
+                    devicesMap[dName].revenue += (i.price || 0);
+                    devicesMap[dName].count++;
+                } else {
+                    staticRev += (i.price || 0) * (i.qty || 1);
+                    if (!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
+                    itemsMap[i.name].qty += (i.qty || 1);
+                    itemsMap[i.name].revenue += (i.price || 0) * (i.qty || 1);
+                }
+            });
+        });
+
+        csvContent += "خلاصه آمار فروش و درآمد کافه کلاور\n";
+        csvContent += `فاکتورهای تسویه‌شده,"${orders.length} عدد"\n`;
+        csvContent += `درآمد ثابت‌ها (بوفه),"${staticRev} تومان"\n`;
+        csvContent += `درآمد تایمری‌ها (دستگاه‌ها),"${timerRev} تومان"\n`;
+        csvContent += `مجموع تسویه نقدی,"${totalCash} تومان"\n`;
+        csvContent += `مجموع تسویه کارت‌خوان,"${totalCard} تومان"\n`;
+        csvContent += `مجموع تسویه کارت‌به‌کارت / انتقال,"${totalTransfer} تومان"\n`;
+        csvContent += `کل درآمد,"${totalRev} تومان"\n\n`;
+
+        csvContent += "پرفروش‌ترین اقلام بوفه,تعداد,درآمد کل (تومان)\n";
+        Object.entries(itemsMap).sort((a, b) => b[1].revenue - a[1].revenue).forEach(([name, data]) => {
+            csvContent += `"${name}","${data.qty}","${data.revenue}"\n`;
+        });
+
+        csvContent += "\nپرکاربردترین دستگاه‌های بازی,تعداد بار,زمان کل (دقیقه),درآمد کل (تومان)\n";
+        Object.entries(devicesMap).sort((a, b) => b[1].revenue - a[1].revenue).forEach(([name, data]) => {
+            csvContent += `"${name}","${data.count}","${data.mins}","${data.revenue}"\n`;
         });
     } else if (activeSubTab === 'devices') {
         let orders = localOrders.filter(o => o.status !== 'معلق' && o.status !== 'لغو');
@@ -1647,7 +1719,7 @@ window.exportReportTXT = function() {
     if (!el) { toast('گزارشی برای خروجی متنی وجود ندارد', 'warning'); return; }
     const activeSubTab = document.querySelector('#reportSubTabs .nav-link.active')?.dataset?.tab || 'sales';
     const subTabName = activeSubTab === 'sales' ? 'فروش' : activeSubTab === 'devices' ? 'دستگاه‌ها' : 'رویدادها/لاگ‌ها';
-    const text = el.innerText.replace(/\n\s*\n/g, '\n');
+    const text = "\uFEFF" + el.innerText.replace(/\n\s*\n/g, '\n');
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
     const url = URL.createObjectURL(blob);

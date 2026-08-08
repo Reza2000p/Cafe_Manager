@@ -118,3 +118,52 @@ button, .nav-item, .nav-link, .quick-date-btn {
 .log-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .log-table th, .log-table td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; }
 .log-table th { background: #f8fafc; color: #475569; font-weight: bold; }
+
+/* ==========================================
+   PRINT STYLES FOR HIGH-END PDF / PRINTING
+   ========================================== */
+@media print {
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    .app-header, .bottom-nav, .desktop-nav, #reportActionBtns, .quick-dates-container, .nav-pills, .btn, #loadingOverlay, .toast-container, header, nav, select, input {
+        display: none !important;
+    }
+    .main-content {
+        padding: 0 !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+    .card-modern {
+        box-shadow: none !important;
+        border: none !important;
+        padding: 0 !important;
+    }
+    #printableReport {
+        display: block !important;
+        border: 2px solid #2d2a7e !important;
+        padding: 20px !important;
+        border-radius: 16px !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+    }
+    #printableReport h5 {
+        color: #2d2a7e !important;
+        font-size: 1.4rem !important;
+        border-bottom: 2px solid #2d2a7e;
+        padding-bottom: 8px;
+    }
+    .log-table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+    }
+    .log-table th, .log-table td {
+        border: 1px solid #ddd !important;
+        padding: 8px !important;
+        color: #000000 !important;
+    }
+}
