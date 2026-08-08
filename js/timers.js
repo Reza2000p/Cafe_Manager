@@ -310,10 +310,21 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
         end_time_str: eTimeStr,
         duration_mins: sessionData.final_duration_mins,
         price: sessionData.final_cost,
-        hourly_rate: sessionData.hourly_rate
+        hourly_rate: sessionData.hourly_rate,
+        qty: 1
     };
 
     if (pendingOrder) {
+        if (!pendingOrder.items) pendingOrder.items = [];
+
+        // Deduplication check
+        const isDup = pendingOrder.items.some(it => 
+            (it.type === 'timer' || it.hourly_rate) &&
+            it.device_name === sessionData.device_name &&
+            it.start_time === sessionData.start_time
+        );
+        if (isDup) return;
+
         pendingOrder.items.push(timerItem);
         pendingOrder.total = (pendingOrder.total || 0) + sessionData.final_cost;
         if (supa) {
@@ -322,16 +333,20 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
                     items: pendingOrder.items,
                     total: pendingOrder.total
                 }).eq('id', pendingOrder.id);
-            } catch(e){}
+            } catch(e){ console.error('Error updating order timer item:', e); }
         }
     } else {
+        const createdBy = (typeof userProfile !== 'undefined' && userProfile && userProfile.full_name) 
+            ? userProfile.full_name 
+            : (typeof currentUser !== 'undefined' && currentUser && currentUser.email ? currentUser.email : 'کارمند');
+
         const newOrder = {
             customer_name: customerName,
             items: [timerItem],
             total: sessionData.final_cost,
             status: 'معلق',
             created_by: createdBy,
-            created_at: new Date().toISOString()
+            created_at: getAdjustedNow().toISOString()
         };
 
         if (supa) {
@@ -349,6 +364,7 @@ async function attachTimerSessionToCustomerOrder(customerName, sessionData) {
             localOrders.unshift(newOrder);
         }
     }
+    saveOrdersToStorage();
 }
 
 // Format duration in seconds into hh:mm:ss

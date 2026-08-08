@@ -47,9 +47,6 @@ function parseSafeDate(dStr) {
     if (!dStr) return new Date();
     if (dStr instanceof Date) return dStr;
     let formatted = String(dStr).trim().replace(' ', 'T');
-    if (!formatted.includes('Z') && !formatted.includes('+') && !formatted.includes('-')) {
-        formatted += 'Z';
-    }
     const parsed = new Date(formatted);
     return isNaN(parsed.getTime()) ? new Date() : parsed;
 }
