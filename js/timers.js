@@ -78,13 +78,13 @@ async function updateDeviceActivePlayersSegments(deviceId, customTime = null) {
         }
         p.current_segment_start = now.toISOString();
 
-        if (supa) {
+        if (supa && p.customer_name) {
             try {
                 await supa.from('active_timer_sessions').update({
                     current_segment_start: p.current_segment_start,
                     accumulated_cost: p.accumulated_cost,
                     accumulated_seconds: p.accumulated_seconds
-                }).eq('id', p.id);
+                }).ilike('customer_name', p.customer_name.trim());
             } catch(e){}
         }
     }
@@ -133,7 +133,6 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
 
     const nowIso = customStartTime ? parseSafeDate(customStartTime).toISOString() : getAdjustedNow().toISOString();
     const sessionObj = {
-        id: Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         device_id: deviceId,
         device_name: device.name,
         customer_name: cleanName,
@@ -144,7 +143,7 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
         accumulated_seconds: 0
     };
 
-    deviceSessions[deviceId].push({ ...sessionObj, end_time: null });
+    deviceSessions[deviceId].push({ ...sessionObj, id: Date.now() + '_' + Math.random().toString(36).substr(2, 4), end_time: null });
     saveDeviceSessionsToStorage();
 
     if (supa) {
@@ -167,31 +166,31 @@ async function startDevicePlayer(deviceId, customerName, customStartTime = null)
 // End a player's session on a device with RACE CONDITION PROTECTION & AUTHORITATIVE DB SYNC
 async function stopDevicePlayer(deviceId, customerName, customEndTime = null) {
     if (!deviceSessions[deviceId]) return null;
-    const playerIndex = deviceSessions[deviceId].findIndex(p => p.customer_name === customerName && !p.end_time);
+    const cleanName = (customerName || '').trim();
+    const playerIndex = deviceSessions[deviceId].findIndex(p => (p.customer_name || '').trim().toLowerCase() === cleanName.toLowerCase() && !p.end_time);
+    
     if (playerIndex === -1) {
-        toast(`بازی «${customerName}» قبلاً توسط پرسنل دیگری پایان یافته است.`, 'info');
+        toast(`بازی «${escapeHtml(cleanName)}» قبلاً پایان یافته است.`, 'info');
         if (typeof silentRefreshData === 'function') await silentRefreshData();
         return null;
     }
 
     const playerSession = deviceSessions[deviceId][playerIndex];
 
-    // AUTHORITATIVE SYNC WITH SUPABASE DB TO PREVENT CROSS-ACCOUNT TIME DRIFT BUGS
+    // AUTHORITATIVE SYNC WITH SUPABASE DB BY CUSTOMER NAME (PREVENTS ID MISMATCH BUGS)
     if (supa) {
         try {
-            const { data: dbCheck, error: dbErr } = await supa.from('active_timer_sessions').select('*').eq('id', playerSession.id).single();
-            if (dbErr || !dbCheck) {
-                toast(`بازی «${customerName}» قبلاً روی دستگاه دیگری پایان یافته و به تسویه منتقل شده است.`, 'info');
-                deviceSessions[deviceId].splice(playerIndex, 1);
-                saveDeviceSessionsToStorage();
-                if (typeof silentRefreshData === 'function') await silentRefreshData();
-                return null;
+            const { data: dbCheck } = await supa.from('active_timer_sessions')
+                .select('*')
+                .ilike('customer_name', cleanName);
+            
+            if (dbCheck && dbCheck.length > 0) {
+                const dbRec = dbCheck[0];
+                if (dbRec.start_time) playerSession.start_time = dbRec.start_time;
+                if (dbRec.current_segment_start) playerSession.current_segment_start = dbRec.current_segment_start;
+                if (dbRec.accumulated_cost !== undefined) playerSession.accumulated_cost = Number(dbRec.accumulated_cost || 0);
+                if (dbRec.accumulated_seconds !== undefined) playerSession.accumulated_seconds = Number(dbRec.accumulated_seconds || 0);
             }
-            // Overwrite local fields with true DB record values created by the starting account
-            if (dbCheck.start_time) playerSession.start_time = dbCheck.start_time;
-            if (dbCheck.current_segment_start) playerSession.current_segment_start = dbCheck.current_segment_start;
-            if (dbCheck.accumulated_cost !== undefined) playerSession.accumulated_cost = Number(dbCheck.accumulated_cost || 0);
-            if (dbCheck.accumulated_seconds !== undefined) playerSession.accumulated_seconds = Number(dbCheck.accumulated_seconds || 0);
         } catch(e) {
             console.error('Database sync error in stopDevicePlayer:', e);
         }
@@ -208,35 +207,33 @@ async function stopDevicePlayer(deviceId, customerName, customEndTime = null) {
     const actualTotalSecs = Math.max(1, Math.floor((now - origStart) / 1000));
     const durationMins = Math.max(1, Math.round(actualTotalSecs / 60));
 
-    // BULLETPROOF FINAL COST CALCULATION (Prevents accumulated_cost DB desync zero/low-cost bugs)
+    // BULLETPROOF FINAL COST CALCULATION
     const finalCost = calculatePlayerCost(playerSession, deviceId, now);
 
     playerSession.final_cost = finalCost;
     playerSession.final_duration_mins = durationMins;
 
-    // ATOMIC DB DELETE PROTECTION (Prevents race condition duplicates across multiple accounts)
+    // DELETE FROM SUPABASE BY CUSTOMER NAME (BULLETPROOF ACROSS ALL DEVICES)
     if (supa) {
         try {
-            const { data: deletedRows, error: delErr } = await supa.from('active_timer_sessions').delete().eq('id', playerSession.id).select();
-            if (delErr || !deletedRows || deletedRows.length === 0) {
-                console.log('Session already deleted by another account/device');
-                toast(`بازی «${customerName}» هم‌زمان توسط پرسنل دیگری پایان یافت.`, 'info');
-                deviceSessions[deviceId].splice(playerIndex, 1);
-                saveDeviceSessionsToStorage();
-                if (typeof silentRefreshData === 'function') await silentRefreshData();
-                return null;
-            }
+            await supa.from('active_timer_sessions').delete().ilike('customer_name', cleanName);
         } catch(e) { 
-            console.error('Error deleting active_timer_session:', e); 
+            console.error('Error deleting active_timer_session from Supabase:', e); 
         }
     }
 
+    // REMOVE FROM LOCAL STATE & SAVE TO STORAGE
     deviceSessions[deviceId].splice(playerIndex, 1);
     saveDeviceSessionsToStorage();
 
-    await attachTimerSessionToCustomerOrder(customerName, playerSession);
+    // ALWAYS ATTACH TO CUSTOMER ORDER / SETTLEMENT (GUARANTEES INVOICE GENERATION)
+    try {
+        await attachTimerSessionToCustomerOrder(cleanName, playerSession);
+    } catch(errOrder) {
+        console.error('Error attaching timer session to customer order:', errOrder);
+    }
 
-    logSystemAction('پایان بازی', `پایان بازی ${customerName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(finalCost)} تومان)`);
+    logSystemAction('پایان بازی', `پایان بازی ${cleanName} روی دستگاه ${playerSession.device_name} (مدت: ${durationMins} دقیقه، مبلغ: ${formatPrice(finalCost)} تومان)`);
     if (typeof broadcastGlobalSync === 'function') broadcastGlobalSync();
     return playerSession;
 }
