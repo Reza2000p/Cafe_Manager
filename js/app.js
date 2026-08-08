@@ -220,7 +220,7 @@ async function silentRefreshData(fullRefresh = false) {
         const isSystem = activePage === 'page-system';
 
         let promises = [
-            supa.from('orders').select('*').order('created_at', { ascending: false }).limit(150),
+            supa.from('orders').select('*').order('created_at', { ascending: false }).limit(2000),
             supa.from('active_timer_sessions').select('*')
         ];
 
@@ -228,8 +228,8 @@ async function silentRefreshData(fullRefresh = false) {
             promises.push(
                 supa.from('menu_items').select('*'),
                 supa.from('categories').select('*'),
-                supa.from('customers').select('*').order('created_at', { ascending: false }).limit(100),
-                supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(100),
+                supa.from('customers').select('*').order('created_at', { ascending: false }).limit(1000),
+                supa.from('system_logs').select('*').order('created_at', { ascending: false }).limit(2000),
                 supa.from('profiles').select('*')
             );
         }
