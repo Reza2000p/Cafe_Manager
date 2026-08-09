@@ -1303,11 +1303,14 @@ function renderHistoryOrderCard(o) {
         </div>
     `).join('');
 
+    const rawId = String(o.id || '');
+    const formattedId = rawId.startsWith('#') ? escapeHtml(rawId) : `#${escapeHtml(rawId)}`;
+
     return `
         <div class="card-modern mb-2 p-3 border">
             <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
                 <div>
-                    <strong class="fs-6 text-dark"><i class="fas fa-receipt text-primary me-1"></i> #${o.id} - ${escapeHtml(o.customer_name)}</strong>
+                    <strong class="fs-6 text-dark"><i class="fas fa-receipt text-primary me-1"></i> ${formattedId} - ${escapeHtml(o.customer_name)}</strong>
                 </div>
                 <div class="text-end">
                     <span class="fw-bold text-success fs-6">${formatPrice(o.total)} تومان</span>
@@ -1370,7 +1373,7 @@ function groupSettledOrdersForHistory(ordersList) {
             resultGrouped.push(arr[0]);
         } else {
             const first = arr[0];
-            const combinedIds = arr.map(x => '#' + (x.id || x.order_number)).join(', ');
+            const combinedIds = arr.map(x => '#' + String(x.id || x.order_number).replace(/^#+/, '')).join(', ');
             const combinedItems = [];
             let combinedTotal = 0;
 
