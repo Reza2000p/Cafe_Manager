@@ -1122,7 +1122,7 @@ function renderSettlement() {
                 </div>
 
                 <div class="invoice-details mb-3">
-                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-gamepad text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
+                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-list-check text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
                     ${staticItems.length ? `<div class="invoice-section-title"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
                     <div class="invoice-total-row">
                         <span>مجموع قابل پرداخت:</span>
@@ -1320,7 +1320,7 @@ function renderHistoryOrderCard(o) {
 
             ${(timerItems.length || staticItems.length) ? `
                 <div class="bg-light p-2 rounded-3 mb-2">
-                    ${timerItems.length ? `<div class="small fw-bold text-secondary mb-1"><i class="fas fa-gamepad text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
+                    ${timerItems.length ? `<div class="small fw-bold text-secondary mb-1"><i class="fas fa-list-check text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
                     ${staticItems.length ? `<div class="small fw-bold text-secondary mb-1 ${timerItems.length ? 'mt-2' : ''}"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
                 </div>
             ` : ''}
