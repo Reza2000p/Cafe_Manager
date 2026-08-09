@@ -1153,9 +1153,16 @@ window.settleCustomerGroup = async function(idsArray, method, customerName) {
     uiLoading(true);
     try {
         const settledBy = (userProfile && userProfile.full_name) ? userProfile.full_name : currentUser.email;
-        const payload = { status: method, settled_by: settledBy };
+        const settledAt = new Date().toISOString();
+        const settlementId = 'SETTLE_' + Date.now();
+        const payload = { status: method, settled_by: settledBy, settled_at: settledAt, settlement_id: settlementId };
         
-        const { error } = await supa.from('orders').update(payload).in('id', idsArray);
+        let { error } = await supa.from('orders').update(payload).in('id', idsArray);
+        if (error) {
+            delete payload.settlement_id;
+            delete payload.settled_at;
+            ({ error } = await supa.from('orders').update(payload).in('id', idsArray));
+        }
         if (error) throw error;
 
         toast(`تسویه حساب ${customerName} با موفقیت ثبت شد (${method})`);
@@ -1337,6 +1344,58 @@ function filterHistoryByPaymentMethod(orders, payF) {
     });
 }
 
+function groupSettledOrdersForHistory(ordersList) {
+    const groupsMap = {};
+    const singleOrders = [];
+
+    ordersList.forEach(o => {
+        if (o.settlement_id) {
+            const key = o.settlement_id;
+            if (!groupsMap[key]) groupsMap[key] = [];
+            groupsMap[key].push(o);
+        } else if (o.status !== 'معلق' && o.customer_name) {
+            const tDate = o.settled_at || o.created_at;
+            const timeKey = tDate ? Math.floor(new Date(tDate).getTime() / 60000) : 0;
+            const key = `auto_${(o.customer_name || '').trim().toLowerCase()}_${(o.status || '').trim()}_${timeKey}`;
+            if (!groupsMap[key]) groupsMap[key] = [];
+            groupsMap[key].push(o);
+        } else {
+            singleOrders.push(o);
+        }
+    });
+
+    const resultGrouped = [];
+    Object.values(groupsMap).forEach(arr => {
+        if (arr.length === 1) {
+            resultGrouped.push(arr[0]);
+        } else {
+            const first = arr[0];
+            const combinedIds = arr.map(x => '#' + (x.id || x.order_number)).join(', ');
+            const combinedItems = [];
+            let combinedTotal = 0;
+
+            arr.forEach(x => {
+                combinedTotal += (x.total || 0);
+                (x.items || []).forEach(it => combinedItems.push(it));
+            });
+
+            resultGrouped.push({
+                ...first,
+                id: combinedIds,
+                customer_name: first.customer_name,
+                total: combinedTotal,
+                items: combinedItems,
+                settled_by: first.settled_by || first.created_by,
+                created_at: first.created_at
+            });
+        }
+    });
+
+    const all = [...singleOrders, ...resultGrouped];
+    all.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return all;
+}
+
 function renderHistory() {
     const activeSubTab = document.querySelector('#historySubTabs .nav-link.active')?.dataset?.tab || 'created';
     const fromD = document.getElementById('histDateFrom')?.value;
@@ -1359,7 +1418,8 @@ function renderHistory() {
             filtered = filtered.filter(o => new Date(o.created_at) <= toDate);
         }
 
-        document.getElementById('historyCreatedList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
+        const groupedHistory = groupSettledOrdersForHistory(filtered);
+        document.getElementById('historyCreatedList').innerHTML = groupedHistory.length ? groupedHistory.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">سفارشی ثبت نشده است</div>';
     } else {
         const payF = document.getElementById('histSettledPayFilter')?.value;
         const userF = document.getElementById('histSettledUserFilter')?.value;
@@ -1377,7 +1437,8 @@ function renderHistory() {
             filtered = filtered.filter(o => new Date(o.created_at) <= toDate);
         }
 
-        document.getElementById('historySettledList').innerHTML = filtered.length ? filtered.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
+        const groupedHistory = groupSettledOrdersForHistory(filtered);
+        document.getElementById('historySettledList').innerHTML = groupedHistory.length ? groupedHistory.map(o => renderHistoryOrderCard(o)).join('') : '<div class="empty-state">تسویه‌ای ثبت نشده است</div>';
     }
 }
 
