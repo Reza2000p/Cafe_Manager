@@ -509,10 +509,16 @@ function renderDashboard() {
     let staticRevenue = 0;
     let timerRevenue = 0;
 
+    const isGameItem = (i) => {
+        if (i.type === 'timer' || i.hourly_rate || i.is_game) return true;
+        const match = localMenu.find(m => (m.id && String(m.id) === String(i.id)) || (m.name && m.name.trim().toLowerCase() === (i.name || '').trim().toLowerCase()));
+        return Boolean(match && match.is_game);
+    };
+
     settledOrders.forEach(o => {
         (o.items || []).forEach(i => {
-            if (i.type === 'timer' || i.hourly_rate) {
-                timerRevenue += (i.price || 0);
+            if (isGameItem(i)) {
+                timerRevenue += (i.price || 0) * (i.qty || 1);
             } else {
                 staticRevenue += (i.price || 0) * (i.qty || 1);
             }
@@ -1254,8 +1260,14 @@ function renderHistoryOrderCard(o) {
     const d = new Date(o.created_at);
     const dateStr = d.toLocaleDateString('fa-IR') + ' - ' + d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 
-    const timerItems = (o.items || []).filter(i => i.type === 'timer' || i.hourly_rate);
-    const staticItems = (o.items || []).filter(i => i.type !== 'timer' && !i.hourly_rate);
+    const isGameItem = (i) => {
+        if (i.type === 'timer' || i.hourly_rate || i.is_game) return true;
+        const match = localMenu.find(m => (m.id && String(m.id) === String(i.id)) || (m.name && m.name.trim().toLowerCase() === (i.name || '').trim().toLowerCase()));
+        return Boolean(match && match.is_game);
+    };
+
+    const timerItems = (o.items || []).filter(i => isGameItem(i));
+    const staticItems = (o.items || []).filter(i => !isGameItem(i));
 
     let timerRows = timerItems.map(t => {
         let timeRange = '';
@@ -1264,10 +1276,15 @@ function renderHistoryOrderCard(o) {
         if (sTime && eTime) {
             timeRange = ` (از ${sTime} تا ${eTime})`;
         }
+
+        const isStaticGame = t.type !== 'timer' && !t.hourly_rate;
+        const itemLabel = isStaticGame ? `${escapeHtml(t.name)} (x${t.qty || 1})` : `${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه`;
+        const itemPrice = isStaticGame ? (t.price || 0) * (t.qty || 1) : t.price;
+
         return `
             <div class="d-flex justify-content-between align-items-center border-bottom border-light py-1 small">
-                <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه</span>
-                <span class="fw-bold text-dark">${formatPrice(t.price)} تومان</span>
+                <span><i class="fas fa-gamepad text-warning me-1"></i> ${itemLabel}</span>
+                <span class="fw-bold text-dark">${formatPrice(itemPrice)} تومان</span>
             </div>
         `;
     }).join('');
@@ -1293,7 +1310,7 @@ function renderHistoryOrderCard(o) {
 
             ${(timerItems.length || staticItems.length) ? `
                 <div class="bg-light p-2 rounded-3 mb-2">
-                    ${timerItems.length ? `<div class="small fw-bold text-secondary mb-1"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌ها:</div>${timerRows}` : ''}
+                    ${timerItems.length ? `<div class="small fw-bold text-secondary mb-1"><i class="fas fa-gamepad text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
                     ${staticItems.length ? `<div class="small fw-bold text-secondary mb-1 ${timerItems.length ? 'mt-2' : ''}"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
                 </div>
             ` : ''}
