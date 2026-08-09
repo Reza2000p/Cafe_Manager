@@ -650,3 +650,4 @@ function addGroupPlayersClick(deviceId, deviceName) {
     }, 400);
 }
 window.addGroupPlayersClick = addGroupPlayersClick;
+window.updateLiveDeviceCardsUI = updateLiveDeviceCardsUI;
