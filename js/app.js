@@ -1357,9 +1357,9 @@ function groupSettledOrdersForHistory(ordersList) {
             if (!groupsMap[key]) groupsMap[key] = [];
             groupsMap[key].push(o);
         } else if (o.status !== 'معلق' && o.customer_name) {
-            const tDate = o.settled_at || o.created_at;
-            const timeKey = tDate ? Math.floor(new Date(tDate).getTime() / 60000) : 0;
-            const key = `auto_${(o.customer_name || '').trim().toLowerCase()}_${(o.status || '').trim()}_${timeKey}`;
+            const d = new Date(o.settled_at || o.created_at);
+            const dateStr = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}_${d.getHours()}`;
+            const key = `auto_${(o.customer_name || '').trim().toLowerCase()}_${(o.status || '').trim()}_${dateStr}`;
             if (!groupsMap[key]) groupsMap[key] = [];
             groupsMap[key].push(o);
         } else {
