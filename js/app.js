@@ -600,6 +600,7 @@ function renderMenu() {
             <div style="flex:1; min-width:0;" class="pe-2">
                 <strong class="fs-6">${escapeHtml(it.name)}</strong>
                 <span class="badge bg-light text-dark ms-2 border">${escapeHtml(it.cat)}</span>
+                ${it.is_game ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill ms-1" style="font-size:0.75rem;"><i class="fas fa-gamepad me-1"></i>گیم و بازی</span>` : ''}
                 <span class="badge bg-secondary ms-1">ترتیب: ${it.display_order || 0}</span>
                 <div class="text-primary fw-bold mt-1">${formatPrice(it.price)} تومان</div>
             </div>
@@ -659,6 +660,7 @@ document.getElementById('addStaticItemBtn').addEventListener('click', () => {
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
     document.getElementById('menuFormDisplayOrder').value = '0';
+    if (document.getElementById('menuFormIsGame')) document.getElementById('menuFormIsGame').checked = false;
     document.getElementById('rateTypeContainer').style.display = 'none';
     document.getElementById('tieredRateContainer').style.display = 'none';
     document.getElementById('fixedRateContainer').style.display = 'block';
@@ -674,6 +676,7 @@ document.getElementById('addTimerDeviceBtn').addEventListener('click', () => {
     document.getElementById('menuFormName').value = '';
     document.getElementById('menuFormPrice').value = '';
     document.getElementById('menuFormDisplayOrder').value = '0';
+    if (document.getElementById('menuFormIsGame')) document.getElementById('menuFormIsGame').checked = true;
     
     document.getElementById('rateTypeContainer').style.display = 'block';
     document.getElementById('menuFormRateType').value = 'fixed';
@@ -708,6 +711,9 @@ window.editMenu = function(id) {
     setVal('menuFormPrice', item.is_timer ? (item.hourly_rate || item.price) : item.price);
     setVal('menuFormCat', item.cat || '');
     setVal('menuFormDisplayOrder', item.display_order !== undefined ? item.display_order : 0);
+    if (document.getElementById('menuFormIsGame')) {
+        document.getElementById('menuFormIsGame').checked = item.is_timer || Boolean(item.is_game);
+    }
 
     const rateTypeContainer = document.getElementById('rateTypeContainer');
     const tieredRateContainer = document.getElementById('tieredRateContainer');
@@ -802,6 +808,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
         return;
     }
 
+    const isGame = isTimer ? true : Boolean(document.getElementById('menuFormIsGame')?.checked);
+
     uiLoading(true);
     try {
         const payload = { 
@@ -812,7 +820,8 @@ document.getElementById('menuFormSave').addEventListener('click', async () => {
             hourly_rate: isTimer ? (price || 0) : 0,
             rate_type: isTimer ? rateType : 'fixed',
             tiered_rates: isTimer && rateType === 'variable' ? tieredRates : null,
-            display_order: displayOrder
+            display_order: displayOrder,
+            is_game: isGame
         };
         
         let error;
@@ -961,7 +970,7 @@ window.addToCart = function(id) {
     if (!item) return;
     const exist = cart.find(c => c.id === id);
     if (exist) exist.qty++;
-    else cart.push({ id: item.id, name: item.name, price: item.price, qty: 1, type: 'static' });
+    else cart.push({ id: item.id, name: item.name, price: item.price, qty: 1, type: 'static', is_game: Boolean(item.is_game) });
     searchInput.value = '';
     searchRes.style.display = 'none';
     renderCart();
@@ -1058,8 +1067,9 @@ function renderSettlement() {
         const g = groups[custName];
         const idsJson = escapeHtml(JSON.stringify(g.ids));
         
-        const timerItems = g.items.filter(i => i.type === 'timer' || i.hourly_rate);
-        const staticItems = g.items.filter(i => i.type !== 'timer' && !i.hourly_rate);
+        const isGameItem = (i) => i.type === 'timer' || i.hourly_rate || i.is_game;
+        const timerItems = g.items.filter(i => isGameItem(i));
+        const staticItems = g.items.filter(i => !isGameItem(i));
 
         let timerRows = timerItems.map(t => {
             let timeRange = '';
@@ -1069,10 +1079,14 @@ function renderSettlement() {
                 timeRange = ` (از ${sTime} تا ${eTime})`;
             }
 
+            const isStaticGame = t.type !== 'timer' && !t.hourly_rate;
+            const itemLabel = isStaticGame ? `${escapeHtml(t.name)} (x${t.qty || 1})` : `${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه`;
+            const itemPrice = isStaticGame ? (t.price || 0) * (t.qty || 1) : t.price;
+
             return `
                 <div class="invoice-item-row">
-                    <span><i class="fas fa-gamepad text-warning me-1"></i> ${escapeHtml(t.name || t.device_name)}${timeRange} - ${t.duration_mins || 0} دقیقه</span>
-                    <span class="fw-bold">${formatPrice(t.price)} تومان</span>
+                    <span><i class="fas fa-gamepad text-warning me-1"></i> ${itemLabel}</span>
+                    <span class="fw-bold">${formatPrice(itemPrice)} تومان</span>
                 </div>
             `;
         }).join('');
@@ -1433,13 +1447,15 @@ function renderReports() {
 
         orders.forEach(o => {
             (o.items || []).forEach(i => {
-                if (i.type === 'timer' || i.hourly_rate) {
-                    const dName = i.device_name || i.name.replace('بازی ', '');
-                    timerRev += (i.price || 0);
+                const isGame = i.type === 'timer' || i.hourly_rate || i.is_game;
+                if (isGame) {
+                    const dName = i.device_name || i.name || 'بازی';
+                    const itemRev = (i.price || 0) * (i.qty || 1);
+                    timerRev += itemRev;
                     if (!devicesMap[dName]) devicesMap[dName] = { mins: 0, revenue: 0, count: 0 };
                     devicesMap[dName].mins += (i.duration_mins || 0);
-                    devicesMap[dName].revenue += (i.price || 0);
-                    devicesMap[dName].count++;
+                    devicesMap[dName].revenue += itemRev;
+                    devicesMap[dName].count += (i.qty || 1);
                 } else {
                     staticRev += (i.price || 0) * (i.qty || 1);
                     if (!itemsMap[i.name]) itemsMap[i.name] = { qty: 0, revenue: 0 };
