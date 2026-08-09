@@ -262,7 +262,7 @@ async function silentRefreshData(fullRefresh = false) {
         // SILENTLY RE-RENDER ACTIVE VIEW
         if (activePage === 'page-orders') {
             const activeOrderTab = document.querySelector('#orderTabs .nav-link.active')?.dataset?.tab;
-            if (activeOrderTab === 'timers' && typeof renderLiveDevices === 'function') renderLiveDevices();
+            if (activeOrderTab === 'timers' && typeof updateLiveDeviceCardsUI === 'function') updateLiveDeviceCardsUI();
             if (activeOrderTab === 'settle' && typeof renderSettlement === 'function') renderSettlement();
             if (activeOrderTab === 'history' && typeof renderHistory === 'function') renderHistory();
         } else if (activePage === 'page-dashboard') {
@@ -1193,7 +1193,6 @@ window.settleSelectedBatch = async function(method) {
     const combinedName = custNames.join('، ');
     await settleCustomerGroup(allIds, method, combinedName);
 };
-}
 
 window.settleCustomerGroup = async function(idsArray, method, customerName) {
     let confirmTitle = 'تأیید تسویه‌حساب';
