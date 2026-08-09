@@ -1067,7 +1067,11 @@ function renderSettlement() {
 
     const listDiv = document.getElementById('pendingOrdersList');
     const keys = Object.keys(groups);
-    if (!keys.length) { listDiv.innerHTML = '<div class="empty-state">هیچ فاکتور معلقی جهت تسویه وجود ندارد</div>'; return; }
+    if (!keys.length) {
+        listDiv.innerHTML = '<div class="empty-state">هیچ فاکتور معلقی جهت تسویه وجود ندارد</div>';
+        updateBatchSettleBar();
+        return;
+    }
 
     listDiv.innerHTML = keys.map(custName => {
         const g = groups[custName];
@@ -1112,7 +1116,8 @@ function renderSettlement() {
             <div class="invoice-card position-relative">
                 <button class="btn btn-sm btn-outline-danger border-0 position-absolute" style="top:12px;left:12px;width:28px;height:28px;padding:0;line-height:1;border-radius:50%;" title="لغو سفارشات" onclick='settleCustomerGroup(${idsJson}, "لغو", "${escapeHtml(custName)}")'><i class="fas fa-times"></i></button>
                 <div class="invoice-header pe-4">
-                    <div>
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="checkbox" class="form-check-input settle-batch-cb ms-1" style="width:20px;height:20px;cursor:pointer;" data-cust="${escapeHtml(custName)}" data-ids='${idsJson}' data-total="${g.total}" onchange="updateBatchSettleBar()" />
                         <strong class="fs-5 text-dark"><i class="fas fa-user-circle text-primary me-1"></i> ${escapeHtml(custName)}</strong>
                     </div>
                     <div class="text-end me-4">
@@ -1138,6 +1143,56 @@ function renderSettlement() {
             </div>
         `;
     }).join('');
+
+    updateBatchSettleBar();
+}
+
+window.updateBatchSettleBar = function() {
+    const checkboxes = document.querySelectorAll('.settle-batch-cb:checked');
+    const container = document.getElementById('batchSettleBarContainer');
+    const infoEl = document.getElementById('batchSettleInfo');
+
+    if (!checkboxes.length) {
+        if (container) container.style.display = 'none';
+        return;
+    }
+
+    let totalSum = 0;
+    const custNames = [];
+    checkboxes.forEach(cb => {
+        totalSum += parseFloat(cb.dataset.total || 0);
+        custNames.push(cb.dataset.cust);
+    });
+
+    if (infoEl) {
+        infoEl.innerHTML = `انتخاب شده: <strong>${checkboxes.length} مشتری</strong> (${escapeHtml(custNames.join('، '))}) | مجموع کل: <strong>${formatPrice(totalSum)} تومان</strong>`;
+    }
+    if (container) container.style.display = 'block';
+};
+
+window.settleSelectedBatch = async function(method) {
+    const checkboxes = document.querySelectorAll('.settle-batch-cb:checked');
+    if (!checkboxes.length) {
+        toast('لطفاً حداقل ۱ فاکتور را جهت تسویه یکجا انتخاب کنید', 'warning');
+        return;
+    }
+
+    let allIds = [];
+    let custNames = [];
+    let totalSum = 0;
+
+    checkboxes.forEach(cb => {
+        try {
+            const ids = JSON.parse(cb.dataset.ids || '[]');
+            allIds = allIds.concat(ids);
+        } catch(e){}
+        custNames.push(cb.dataset.cust);
+        totalSum += parseFloat(cb.dataset.total || 0);
+    });
+
+    const combinedName = custNames.join('، ');
+    await settleCustomerGroup(allIds, method, combinedName);
+};
 }
 
 window.settleCustomerGroup = async function(idsArray, method, customerName) {
