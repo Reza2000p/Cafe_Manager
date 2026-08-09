@@ -1067,7 +1067,11 @@ function renderSettlement() {
         const g = groups[custName];
         const idsJson = escapeHtml(JSON.stringify(g.ids));
         
-        const isGameItem = (i) => i.type === 'timer' || i.hourly_rate || i.is_game;
+        const isGameItem = (i) => {
+            if (i.type === 'timer' || i.hourly_rate || i.is_game) return true;
+            const match = localMenu.find(m => (m.id && String(m.id) === String(i.id)) || (m.name && m.name.trim().toLowerCase() === (i.name || '').trim().toLowerCase()));
+            return Boolean(match && match.is_game);
+        };
         const timerItems = g.items.filter(i => isGameItem(i));
         const staticItems = g.items.filter(i => !isGameItem(i));
 
@@ -1112,7 +1116,7 @@ function renderSettlement() {
                 </div>
 
                 <div class="invoice-details mb-3">
-                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-stopwatch text-warning me-1"></i> ریز خدمات دستگاه‌ها:</div>${timerRows}` : ''}
+                    ${timerItems.length ? `<div class="invoice-section-title"><i class="fas fa-gamepad text-warning me-1"></i> ریز خدمات تایمری و ورودی بازی‌ها:</div>${timerRows}` : ''}
                     ${staticItems.length ? `<div class="invoice-section-title"><i class="fas fa-utensils text-info me-1"></i> ریز اقلام بوفه:</div>${staticRows}` : ''}
                     <div class="invoice-total-row">
                         <span>مجموع قابل پرداخت:</span>
@@ -1447,7 +1451,7 @@ function renderReports() {
 
         orders.forEach(o => {
             (o.items || []).forEach(i => {
-                const isGame = i.type === 'timer' || i.hourly_rate || i.is_game;
+                const isGame = i.type === 'timer' || i.hourly_rate || i.is_game || Boolean(localMenu.find(m => (m.id && String(m.id) === String(i.id)) || (m.name && m.name.trim().toLowerCase() === (i.name || '').trim().toLowerCase()))?.is_game);
                 if (isGame) {
                     const dName = i.device_name || i.name || 'بازی';
                     const itemRev = (i.price || 0) * (i.qty || 1);
